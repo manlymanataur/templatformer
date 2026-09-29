@@ -44,6 +44,16 @@ extends Resource
 @export var magnet_fly_speed := 10.0 ## small, how fast the magnet carries you along an iron's line
 @export var magnet_fly_range := 22.0 ## small, how far along its line an iron's field reaches you
 @export var iron_speed := 6.0 ## how fast iron slides from cell to cell
+@export var lash_range := 16.0 ## how far the lash reaches
+@export var lash_pull_speed := 22.0 ## how fast the lash pulls you to a post or trunk
+@export var leash_length := 16.0 ## lash hooked on the spider: rope you can pay out before you tow it
+@export var spider_cable := 14.0 ## piloting the spider: cable it can pay out from you
+@export var spider_speed := 7.0
+@export var gear_ratio := 0.5 ## metres a gear's lift moves per metre of rope sliding past it
+@export var trunk_height := 8.0 ## a planted seed's trunk grows up to this, or to the ceiling
+@export var root_length := 18.0 ## roots grow sideways until blocked, up to this
+@export var spear_drop := 3.0 ## a seed falling at least this far onto mud spears in and plants itself
+@export var climb_speed := 5.0 ## up a trunk
 @export var boost_pad_speed := 30.0
 @export var cam_distance := 7.0
 @export var cam_lag := 10.0
@@ -53,4 +63,4 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", 
 	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
 	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "spin_charge_time", "bomb_throw_speed",
-	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "boost_pad_speed", "cam_distance", "cam_lag", "cam_recenter_delay"]
+	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_cable", "spider_speed", "gear_ratio", "trunk_height", "root_length", "spear_drop", "climb_speed", "boost_pad_speed", "cam_distance", "cam_lag", "cam_recenter_delay"]

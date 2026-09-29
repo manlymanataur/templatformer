@@ -168,6 +168,7 @@ func _run() -> void:
 	quit(1 if fails else 0)
 
 func _fresh_player(pos: Vector3) -> void:
+	p.drop_holds()
 	p.magnet_push = false
 	if p.small:
 		p.set_small(false, true)
@@ -320,6 +321,7 @@ func _combat_tests() -> void:
 	await _yard_tests(arena)
 	await _scale_tests(arena)
 	await _tool_tests(arena)
+	await _rootworks_tests(arena)
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -1251,4 +1253,151 @@ func _tool_tests(arena: Vector3) -> void:
 		if not p.is_on_floor():
 			bad.append(key)
 	check("every warp lands on a floor", bad.is_empty(), "%d warps" % dev.WARPS.size() if bad.is_empty() else ", ".join(bad))
+	await _fresh_player(arena)
+
+func _use(id: String) -> void:
+	p.ai_item = p.inventory.slots.find(id)
+	await frames(2)
+
+## Rootworks: seeds, trunks and roots from Propagule; the lash; the spider, its cable and gears from Winch.
+func _rootworks_tests(arena: Vector3) -> void:
+	var m: Dictionary = level.marks
+	var t: Tuning = level.t
+	# 61. Plant the seed on the soil and its root bridges the 14 m chasm
+	await _fresh_player(Vector3(63, 6.6, 69.4))
+	p.ai_attack = true # next to the seed: pick it up
+	await frames(3)
+	var picked := p.held_seed != null
+	await place(m["root_soil"]) # carry it to the soil at the chasm's edge
+	p.facing = Vector3.BACK
+	await frames(2)
+	p.ai_attack = true # on soil: plant it
+	await frames(3)
+	var planted_seed: Seed = null
+	for n in get_nodes_in_group("seeds"):
+		if (n as Seed).planted:
+			planted_seed = n
+	var span := 0.0
+	if planted_seed != null:
+		for r in planted_seed.roots:
+			var sz := ((r.get_child(0) as CollisionShape3D).shape as BoxShape3D).size
+			if sz.z > sz.x and r.global_position.z > planted_seed.global_position.z:
+				span = r.global_position.z + sz.z / 2.0
+	check("a seed picked up and planted on soil roots right across the 14 m chasm",
+		picked and planted_seed != null and span > 90.3, "root reaches z %.1f, far side at 90" % span)
+	await frames(2)
+	await place(Vector3(68, 6.6, 75.2)) # just past the trunk, on the root
+	p.ai_move = Vector2(0, 1)
+	await frames(150)
+	p.ai_move = Vector2.ZERO
+	check("you can walk the root across", p.global_position.z > 91.0 and p.global_position.y > 5.5,
+		"ended z %.1f y %.1f" % [p.global_position.z, p.global_position.y])
+	var tr := planted_seed.trunk_top() - planted_seed.global_position.y if planted_seed != null else 0.0
+	check("the trunk grows %.0f m" % t.trunk_height, absf(tr - t.trunk_height) < 0.5, "%.1f m" % tr)
+
+	# 62. Locked on, the lash fetches the seed off the 4.5 m ledge
+	await _fresh_player(m["root_c_stand"])
+	p.inventory.add("lash")
+	p.facing = Vector3.BACK
+	p.ai_target = true
+	await frames(5)
+	await _use("lash")
+	p.ai_target = false
+	check("locked on, the lash fetches a seed off a 4.5 m ledge %.1f m away" % Vector3(64, 10.9, 104.6).distance_to(m["root_c_stand"]),
+		p.held_seed != null, "holding %s" % (p.held_seed != null))
+
+	# 63. Plant it in the mud at the ledge's foot, climb the trunk and step onto the ledge
+	await place(Vector3(64, 6.6, 102.9))
+	p.facing = Vector3.BACK
+	await frames(2)
+	p.ai_attack = true
+	await frames(3)
+	var in_mud := p.held_seed == null
+	p.ai_move = Vector2(0, 1)
+	var top_y := 0.0
+	for i in 300:
+		await physics_frame
+		top_y = maxf(top_y, p.global_position.y)
+		if p.global_position.z > 105.5 and p.is_on_floor():
+			break # on the ledge: stop pushing before you run off its far side
+	p.ai_move = Vector2.ZERO
+	await frames(30)
+	check("planted in mud, you climb the trunk and step onto the 4.5 m ledge",
+		in_mud and p.global_position.z > 104.3 and p.global_position.y > m["root_c_top"], "peak y %.1f, ended z %.1f y %.1f" % [top_y, p.global_position.z, p.global_position.y])
+
+	# 64. Dropped 3 m or more onto mud a seed spears in and plants itself; 2 m isn't enough
+	var high := Seed.make(level, Vector3(61, 6.0 + t.spear_drop + 0.6, 99), t)
+	var low := Seed.make(level, Vector3(66, 6.0 + 2.0, 99), t)
+	await frames(90)
+	check("a seed dropped %.0f m onto mud plants itself, one dropped 2 m doesn't" % t.spear_drop, high.planted and not low.planted,
+		"high %s, low %s" % [high.planted, low.planted])
+	high.queue_free()
+	low.queue_free()
+
+	# 65. The lash pulls you to the post across the second 14 m chasm
+	await _fresh_player(Vector3(60.5, 6.6, 94))
+	p.inventory.add("lash")
+	p.facing = Vector3.FORWARD
+	p.ai_target = true
+	await frames(5)
+	var locked: bool = p.target == m["root_post"]
+	await _use("lash")
+	p.ai_target = false
+	await frames(120)
+	check("locked on, the lash pulls you %.0f m across the 14 m chasm to the post" % (60.5 - 45.0),
+		locked and p.global_position.x < m["root_b2_x"] and p.global_position.y > 5.5, "ended x %.1f y %.1f" % [p.global_position.x, p.global_position.y])
+
+	# 66. Steering the spider through the bars and past the gear lifts the gate; letting go keeps it up
+	await _fresh_player(m["root_gear_stand"])
+	p.inventory.add("spider")
+	p.facing = Vector3.RIGHT
+	await frames(2)
+	await _use("spider")
+	var sp: Spider = p.spider
+	var start_p := p.global_position
+	p.ai_move = Vector2(1, 0)
+	await frames(100)
+	p.ai_move = Vector2(0, 1)
+	await frames(80)
+	p.ai_move = Vector2.ZERO
+	var gate: Gate = m["root_gate"]
+	var gear: Gear = m["root_gear"]
+	var rise := gate.global_position.y - 2.0
+	var cable := sp.cable.length() if sp != null and sp.cable != null else 0.0
+	check("steering, you sit still and the spider passes the bars", p.global_position.distance_to(start_p) < 0.2 and sp != null and sp.global_position.x > 55.0,
+		"you moved %.2f m, spider at x %.1f" % [p.global_position.distance_to(start_p), sp.global_position.x if sp != null else 0.0])
+	check("the cable stops at %.0f m" % t.spider_cable, cable <= t.spider_cable + 0.1 and cable > t.spider_cable - 1.0, "%.1f m" % cable)
+	check("cable sliding past the gear lifts the gate %.1f m per metre" % t.gear_ratio, rise > 3.5, "gate up %.1f m after %.1f m of cable past the gear" % [rise, gear.wound])
+	await _use("spider") # let go
+	await frames(5)
+	var kept := gate.global_position.y - 2.0
+	await place(Vector3(42, 0.6, 74))
+	p.ai_move = Vector2(0, 1)
+	await frames(90)
+	p.ai_move = Vector2.ZERO
+	check("let go, the gear keeps its angle and you walk under the gate", absf(kept - rise) < 0.01 and p.global_position.z > 77.5,
+		"gate up %.1f m, you at z %.1f" % [kept, p.global_position.z])
+	p.stow_spider()
+
+	# 67. Lash the parked spider: it's a leash. At full length you tow it after you.
+	await _fresh_player(arena)
+	p.inventory.add("spider")
+	p.inventory.add("lash")
+	p.facing = Vector3.RIGHT
+	await _use("spider")
+	await _use("spider") # let go at once: it waits beside you
+	var spider_at: Vector3 = p.spider.global_position
+	p.ai_target = true
+	await frames(5)
+	await _use("lash")
+	p.ai_target = false
+	var hooked := p.leash != null
+	p.ai_move = Vector2(-1, 0)
+	await frames(180)
+	p.ai_move = Vector2.ZERO
+	var towed: float = p.spider.global_position.distance_to(spider_at)
+	var rope := p.leash.length() if p.leash != null else 0.0
+	check("the lash hooks the spider as a %.0f m leash that tows it" % t.leash_length, hooked and towed > 5.0 and rope < t.leash_length + 0.6,
+		"spider towed %.1f m, rope %.1f m" % [towed, rope])
+	p.stow_spider()
 	await _fresh_player(arena)

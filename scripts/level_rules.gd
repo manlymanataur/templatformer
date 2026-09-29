@@ -22,6 +22,7 @@ const AREAS := {
 	"Ember & Umbra": AABB(Vector3(-14, -4, 34), Vector3(24, 13.5, 88)), # stops under the 10 m roof
 	"Lodestone": AABB(Vector3(50, -4, -36), Vector3(30, 20, 40)),
 	"Scale": AABB(Vector3(-100, -8, 36), Vector3(46, 24, 76)),
+	"Rootworks": AABB(Vector3(34, -4, 53), Vector3(52, 24, 61)), # the ramp foot is left out: it runs by the arena
 }
 
 class Grid:

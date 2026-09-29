@@ -71,7 +71,16 @@ var _prev_wish_len := 0.0
 var _roll_wish := Vector3.ZERO ## direction of a tap dodge waiting to start
 var _hat: Node3D
 var _candle_light: OmniLight3D
-var small := false ## shrunk with the Shrink item
+var spider: Spider = null ## the clockwork spider, once it's out of your pack
+var pilot: Spider = null ## the spider you're steering; you sit still meanwhile
+var leash: Tether = null ## the lash hooked on the spider
+var held_seed: Seed = null
+var grapple_to := Vector3.ZERO ## the lash is pulling you here
+var grapple_t := 0.0
+var climbing: Seed = null ## the trunk you're climbing
+var _flick: MeshInstance3D
+var _flick_t := 0.0
+var small := false ## shrunk on a shrink pad
 var magnet_flying := false ## small, and the magnet is carrying you along an iron's line
 var _col: CollisionShape3D
 const RADIUS := 0.5
@@ -140,6 +149,14 @@ func _ready() -> void:
 	_candle_light.position = Vector3(0, 1.0, 0)
 	_candle_light.visible = false
 	add_child(_candle_light)
+	_flick = MeshInstance3D.new()
+	_flick.mesh = ImmediateMesh.new()
+	var fm := StandardMaterial3D.new()
+	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fm.albedo_color = Color(0.85, 0.7, 0.4)
+	_flick.material_override = fm
+	_flick.top_level = true
+	add_child(_flick)
 
 func _mat(c: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -225,6 +242,10 @@ func item_active(id: String) -> bool:
 			return candle_lit
 		"umbra":
 			return umbra != null
+		"spider":
+			return pilot != null
+		"lash":
+			return leash != null
 	return false
 
 # light source (see Lighting)
@@ -251,6 +272,137 @@ func respawn() -> void:
 		carrying = null
 	if small:
 		set_small(false)
+	drop_holds()
+
+## Let go of everything: the seed you carry, the leash, the spider you're steering.
+func drop_holds() -> void:
+	if held_seed != null:
+		held_seed.set_down(global_position + Vector3.UP * 0.2)
+		held_seed = null
+	if leash != null:
+		leash.queue_free()
+		leash = null
+	if pilot != null:
+		pilot.let_go()
+		pilot = null
+	grapple_t = 0.0
+	climbing = null
+
+## Where the camera looks: the spider while you steer it, otherwise you.
+func focus() -> Node3D:
+	return pilot if pilot != null else self
+
+func hands_full() -> bool:
+	return held_seed != null or carrying != null
+
+## The spider item: send it out and steer it; let go of it; take it back or steer it again.
+func use_spider() -> void:
+	if pilot != null:
+		pilot.let_go()
+		pilot = null
+		return
+	if spider == null or not is_instance_valid(spider):
+		if not is_on_floor():
+			return
+		spider = Spider.deploy(self)
+	elif spider.global_position.distance_to(global_position) < 2.5:
+		stow_spider()
+		return
+	if leash != null:
+		leash.queue_free()
+		leash = null
+	velocity = Vector3.ZERO
+	pilot = spider
+	spider.take_control()
+
+## The spider climbs back into your pack.
+func stow_spider() -> void:
+	if leash != null:
+		leash.queue_free()
+		leash = null
+	if spider != null and is_instance_valid(spider):
+		spider.queue_free()
+	spider = null
+	pilot = null
+	inventory.changed.emit()
+
+## The lash: crack it straight ahead, or at what you're locked on to. It pulls you to a post or trunk,
+## fetches a loose seed into your hands, stings and yanks a monster, or hooks the spider as a leash.
+## With the spider already hooked, it lets go. Your hands must be empty.
+func use_lash() -> void:
+	if leash != null:
+		leash.queue_free()
+		leash = null
+		return
+	if hands_full() or pilot != null:
+		return
+	var from := global_position + Vector3.UP * 0.3
+	var dir := _flat_facing()
+	if target != null and is_instance_valid(target):
+		dir = (target.global_position - from).normalized()
+	var to := from + dir * t.lash_range
+	var q := PhysicsRayQueryParameters3D.create(from, to, 1 | 1 << 4, [get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	var end := to if hit.is_empty() else (hit["position"] as Vector3)
+	_show_flick(from, end)
+	if hit.is_empty():
+		return
+	var c: Node = hit["collider"]
+	if c is Spider:
+		leash = Tether.make(get_parent(), c, self, t.leash_length, true, Color(0.85, 0.7, 0.4))
+	elif c is Seed and (c as Seed).loose():
+		held_seed = c
+		held_seed.hold(self)
+	elif c.is_in_group("lash_posts"):
+		var flat := Vector3(dir.x, 0, dir.z).normalized()
+		grapple_to = end - flat * 0.7
+		grapple_t = from.distance_to(end) / t.lash_pull_speed + 0.3
+		jumping = false
+		air_lock = 0.2
+	elif c.is_in_group("hurtable") and c != self:
+		c.hurt(1, global_position)
+		if "velocity" in c:
+			c.velocity = (global_position - (c as Node3D).global_position).normalized() * 9.0 + Vector3.UP * 3.0
+
+func _show_flick(a: Vector3, b: Vector3) -> void:
+	var m := _flick.mesh as ImmediateMesh
+	m.clear_surfaces()
+	m.surface_begin(Mesh.PRIMITIVE_LINES)
+	m.surface_add_vertex(a)
+	m.surface_add_vertex(b)
+	m.surface_end()
+	_flick_t = 0.18
+	_flick.visible = true
+
+## Attack with a seed in your hands: plant it on soil, mud or roots; otherwise throw it or set it down.
+func release_seed() -> void:
+	var sd := held_seed
+	held_seed = null
+	var f := _flat_facing()
+	sd.set_down(global_position + f * 0.9 + Vector3.DOWN * (radius() - Seed.RADIUS - 0.05))
+	if sd.can_plant():
+		sd.plant()
+		return
+	var moving := _wish().length() > 0.2 or flat_speed() > 2.0
+	if moving:
+		sd.set_down(global_position + Vector3.UP * (radius() + 0.6))
+		sd.throw(f * t.bomb_throw_speed + Vector3.UP * t.bomb_throw_up + Vector3(velocity.x, 0, velocity.z) * 0.3)
+
+## Attack with empty hands next to a seed picks it up, and next to a trunk pulls it up.
+## Returns true if attack was used that way.
+func _grab_seed() -> bool:
+	for n in get_tree().get_nodes_in_group("seeds"):
+		var sd := n as Seed
+		var d := sd.global_position - global_position
+		if sd.loose() and d.length() < radius() + 1.0:
+			held_seed = sd
+			sd.hold(self)
+			return true
+		if sd.planted and Vector2(d.x, d.z).length() < radius() + Seed.TRUNK_R + 0.6 and absf(d.y) < 1.5:
+			sd.uproot(self)
+			held_seed = sd
+			return true
+	return false
 
 func hurt(amount: int, from: Vector3) -> void:
 	if god or invuln > 0.0 or hp <= 0 or dodging():
@@ -324,6 +476,18 @@ func _physics_process(dt: float) -> void:
 				item_pressed = i
 		if Input.is_action_just_pressed("respawn"):
 			respawn()
+	_flick_t -= dt
+	_flick.visible = _flick_t > 0.0
+	if pilot != null and not is_instance_valid(pilot):
+		pilot = null
+	if pilot != null:
+		# you sit still and the stick steers the spider
+		pilot.wish = _wish()
+		jump_pressed = false
+		jump_held = false
+		attack_pressed = false
+		attack_held = false
+		target_held = false
 	invuln = maxf(invuln - dt, 0.0)
 	wall_lock = maxf(wall_lock - dt, 0.0)
 	air_lock = maxf(air_lock - dt, 0.0)
@@ -333,6 +497,11 @@ func _physics_process(dt: float) -> void:
 		inventory.use(item_pressed, self)
 	if carrying != null and attack_pressed:
 		release_bomb()
+	elif held_seed != null:
+		if attack_pressed:
+			release_seed()
+	elif attack_pressed and _grab_seed():
+		pass
 	elif inventory.has("spear") and carrying == null:
 		if attack_pressed:
 			spear.press()
@@ -352,7 +521,7 @@ func _physics_process(dt: float) -> void:
 	if strafing and not had_strafe:
 		lock_dir = _flat_facing()
 
-	var wish := _wish()
+	var wish := _wish() if pilot == null else Vector3.ZERO
 	last_wish = wish
 	if candle_lit:
 		Lighting.spread_heat(global_position, t.candle_touch, dt, self)
@@ -373,7 +542,11 @@ func _physics_process(dt: float) -> void:
 	var water := _water()
 	var fly := _magnet_line() if small and inventory.has("magnet") else Vector3.ZERO
 	magnet_flying = fly != Vector3.ZERO
-	if magnet_flying:
+	if grapple_t > 0.0:
+		_grapple_step(dt)
+	elif _climb_step(wish, jump_pressed):
+		pass
+	elif magnet_flying:
 		_fly_step(wish, fly)
 	elif water != null and small and global_position.y <= water.surface() + 0.05 and velocity.y <= 0.0:
 		_swim_step(dt, wish, water)
@@ -391,6 +564,12 @@ func _physics_process(dt: float) -> void:
 	floor_snap_length = 0.1 if on_floor and velocity.y > 3.0 else 0.7
 	move_and_slide()
 	_touch_after_move()
+	if leash != null:
+		if is_instance_valid(leash.anchor):
+			leash.update()
+		else:
+			leash.queue_free()
+			leash = null
 	if water != null:
 		if small and global_position.y < water.surface() and velocity.y <= 0.0:
 			global_position.y = water.surface() # bob at the surface
@@ -706,3 +885,45 @@ func _fly_step(wish: Vector3, fly: Vector3) -> void:
 	up_direction = Vector3.UP
 	roll_t = 0.0
 	jumping = false
+
+## The lash is pulling you to a post or trunk. At the end you get a little hop up and over.
+func _grapple_step(dt: float) -> void:
+	grapple_t -= dt
+	var d := grapple_to - global_position
+	if d.length() < 0.6 or grapple_t <= 0.0 or (get_slide_collision_count() > 0 and d.length() < 2.0):
+		grapple_t = 0.0
+		var flat := Vector3(d.x, 0, d.z)
+		velocity = (flat.normalized() if flat.length() > 0.05 else _flat_facing()) * 4.0 + Vector3.UP * 7.0
+		air_lock = 0.1
+		return
+	velocity = d.normalized() * t.lash_pull_speed
+	facing = Vector3(d.x, 0, d.z).normalized() if Vector2(d.x, d.z).length() > 0.1 else facing
+
+## Push into a trunk to climb it; at the top you pull yourself up onto it. Jump kicks you off.
+## Returns true while climbing.
+func _climb_step(wish: Vector3, jump_pressed: bool) -> bool:
+	climbing = null
+	if hands_full() or small:
+		return false
+	for n in get_tree().get_nodes_in_group("trunks"):
+		var sd: Seed = (n as Node).get_meta("seed")
+		var c := (n as Node3D).global_position
+		var to := Vector3(c.x - global_position.x, 0, c.z - global_position.z)
+		if to.length() > radius() + Seed.TRUNK_R + 0.25 or wish.dot(to.normalized()) < 0.4:
+			continue
+		var top := sd.trunk_top()
+		if global_position.y > top + 0.2 or global_position.y < sd.global_position.y - 1.0:
+			continue
+		climbing = sd
+		facing = to.normalized()
+		if jump_pressed:
+			velocity = -to.normalized() * t.wall_jump_speed + Vector3.UP * t.wall_jump_up
+			wall_lock = 0.2
+			climbing = null
+			return true
+		if global_position.y >= top - 0.3:
+			velocity = to.normalized() * 3.0 + Vector3.UP * 6.0 # over the top
+		else:
+			velocity = Vector3.UP * t.climb_speed + to.normalized() * 1.0
+		return true
+	return false

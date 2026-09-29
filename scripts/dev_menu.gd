@@ -28,6 +28,10 @@ const WARPS := [
 	["Scale: grate room", "garden_grate_ramp"],
 	["Scale: pond", "garden_pond_bank"],
 	["Scale: ferry", "garden_ferry_edge"],
+	["Rootworks: root bridge", "root_seed"],
+	["Rootworks: lash ledge", "root_c_stand"],
+	["Rootworks: lash post", "root_post_stand"],
+	["Rootworks: gear room", "root_gear_room"],
 ]
 const SHOWN := 12 ## rows the menu shows at once
 const ACTIONS := ["Give every item", "God mode", "Heal", "Shrink / grow"]
