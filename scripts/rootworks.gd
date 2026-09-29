@@ -7,9 +7,10 @@ extends RefCounted
 ## Lash ledge (north-west): a seed sits on a 4.5 m ledge. Lock on to it and lash it down, plant it in the mud
 ##   at the ledge's foot, and climb the trunk to the heart on top. (Drop a seed 3 m onto mud and it plants itself.)
 ## Lash post (north-west): a second 14 m chasm with a post on the far side. Lock on and lash it to be pulled across.
-## Gear room (on the ground, west): bars you can't pass split the room, and a gear behind them lifts the gate
-##   to the nook. Stand by the bars and steer the spider through them, past the gear's north side: every metre
-##   of cable that slides past turns it. The gear keeps its angle when you let go, so it can be wound over trips.
+## Gear room (on the ground, west): the gear that lifts the gate to the nook sits in a cage of bars. Neither
+##   you nor the spider can reach it, but the rope passes between bars. Lash the spider, steer it round the
+##   cage so the rope wraps the gear, and keep going: every metre of rope that slides past turns it. The gear
+##   keeps its angle when you unhook, so it can be wound over trips.
 
 const H := 6.0 ## floor height
 const STONE := Color(0.55, 0.5, 0.42)
@@ -40,7 +41,7 @@ static func build(lv: Node3D) -> void:
 	rect.call(66, 70, 64, 74, 0, H, STONE)
 	var soil: StaticBody3D = rect.call(66, 70, 74, 76, 0, H, SOIL)
 	soil.add_to_group("soil")
-	Seed.make(lv, Vector3(63, H + 0.4, 68), t)
+	Seed.make(lv, Vector3(63, H + Seed.HALF, 68), t)
 	lv.label(Vector3(68, H + 2.0, 75), "plant a seed on soil", 32)
 	marks["root_seed"] = Vector3(63, H + 0.6, 70)
 	marks["root_soil"] = Vector3(68, H + 0.6, 73.2)
@@ -52,7 +53,7 @@ static func build(lv: Node3D) -> void:
 	var mud: StaticBody3D = rect.call(60, 68, 98, 104, 0, H, MUD)
 	mud.add_to_group("mud")
 	rect.call(60, 68, 104, 112, 0, H + 4.5, STONE)
-	Seed.make(lv, Vector3(64, H + 4.9, 104.6), t)
+	Seed.make(lv, Vector3(64, H + 4.5 + Seed.HALF, 106), t)
 	Pickup.spawn(lv, "heart", 1, Vector3(64, H + 5.3, 109))
 	lv.label(Vector3(72, H + 2.0, 100), "lock on and lash the seed down", 32)
 	marks["root_c_stand"] = Vector3(64, H + 0.6, 94)
@@ -82,8 +83,18 @@ static func build(lv: Node3D) -> void:
 	rect.call(44, 44.5, 76.5, 82, 0, 4, wall)
 	rect.call(35.5, 44.5, 82, 82.5, 0, 4, wall)
 	Pickup.spawn(lv, "heart", 1, Vector3(40, 0.8, 79.5))
-	# bars across the room at x 47: you can't pass, the spider can
-	for k in 20:
+	# the gear sits in a cage of bars: neither you nor the spider can reach its teeth, but the rope passes
+	# between the bars. Hook the spider, and run the rope round the gear.
+	var gc := Vector3(50, 0, 66)
+	var bars: Array[Vector3] = []
+	for k in 6:
+		var o := -2.5 + k
+		bars.append(Vector3(o, 0, -2.5))
+		bars.append(Vector3(o, 0, 2.5))
+		if k > 0 and k < 5:
+			bars.append(Vector3(-2.5, 0, o))
+			bars.append(Vector3(2.5, 0, o))
+	for o in bars:
 		var bar := StaticBody3D.new()
 		bar.collision_layer = 1 << 1
 		var bc := CollisionShape3D.new()
@@ -96,21 +107,26 @@ static func build(lv: Node3D) -> void:
 		bmm.size = bs.size
 		bmi.mesh = bmm
 		bar.add_child(bmi)
+		bar.position = gc + o + Vector3.UP * 1.5
 		lv.add_child(bar)
-		bar.global_position = Vector3(47, 1.5, 56.5 + k * 1.0)
-	var rail := StaticBody3D.new() # a tall rail over the bars, so you can't hop over
-	rail.collision_layer = 1 << 1
+	var lid := StaticBody3D.new() # a lid so you can't hop in
+	lid.collision_layer = 1 << 1
 	var rc := CollisionShape3D.new()
 	var rs := BoxShape3D.new()
-	rs.size = Vector3(0.3, 3.0, 20)
+	rs.size = Vector3(5.2, 0.2, 5.2)
 	rc.shape = rs
-	rail.add_child(rc)
-	lv.add_child(rail)
-	rail.global_position = Vector3(47, 4.5, 66)
+	lid.add_child(rc)
+	var lmi := MeshInstance3D.new()
+	var lmm := BoxMesh.new()
+	lmm.size = rs.size
+	lmi.mesh = lmm
+	lid.add_child(lmi)
+	lid.position = gc + Vector3.UP * 3.1
+	lv.add_child(lid)
 	var gate := Gate.make(lv, Vector3(42, 2, 76.25), Vector3(4, 4, 0.5), Color(0.6, 0.45, 0.25))
-	var gear := Gear.make(lv, Vector3(52, 0, 62), 1.0, gate, Vector3.UP * 4.0, t)
-	lv.label(Vector3(42, 3, 66), "steer the spider past the gear", 32)
+	var gear := Gear.make(lv, gc, 1.0, gate, Vector3.UP * 4.0, t)
+	lv.label(Vector3(42, 3.5, 66), "lash the spider, run the rope round the caged gear", 32)
 	marks["root_gear_room"] = Vector3(40, 0.6, 66)
-	marks["root_gear_stand"] = Vector3(46.2, 0.6, 63.5)
+	marks["root_gear_stand"] = Vector3(44, 0.6, 66)
 	marks["root_gate"] = gate
 	marks["root_gear"] = gear

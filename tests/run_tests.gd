@@ -272,12 +272,12 @@ func _combat_tests() -> void:
 	# 17. Inventory: pickups go on free quick slots; assign swaps; potion only works when hurt
 	await _fresh_player(arena)
 	var inv := p.inventory
-	inv.add("bombs", 5)
+	inv.add("candle")
 	inv.add("potion")
 	inv.add("spear")
-	check("items fill quick slots in order", inv.slots == (["bombs", "potion", ""] as Array[String]), "%s" % [inv.slots])
+	check("items fill quick slots in order", inv.slots == (["candle", "potion", ""] as Array[String]), "%s" % [inv.slots])
 	inv.assign(0, "potion")
-	check("assigning swaps slots", inv.slots == (["potion", "bombs", ""] as Array[String]), "%s" % [inv.slots])
+	check("assigning swaps slots", inv.slots == (["potion", "candle", ""] as Array[String]), "%s" % [inv.slots])
 	var used_full := inv.use(0, p)
 	p.hp = 2
 	var used_hurt := inv.use(0, p)
@@ -286,14 +286,13 @@ func _combat_tests() -> void:
 
 	# 18. Bombs: 2 damage to everything within 3.5 m after the fuse, you included
 	await _fresh_player(arena)
-	p.inventory.add("bombs", 5)
 	mon = _monster_ahead(2.5)
 	mon.stun = 10.0
 	var far_mon := _monster_ahead(8.0)
 	far_mon.stun = 10.0
-	p.ai_item = 0 # pull one out
-	await frames(3)
-	p.ai_item = 0 # standing still: set it down in front
+	var plant := await _pull_bomb()
+	var pulled := p.carrying != null and not plant.ripe()
+	p.ai_context = true # standing still: set it down in front
 	await frames(3)
 	p.ai_move = Vector2(0, 1) # walk away from the bomb
 	await frames(40)
@@ -302,7 +301,9 @@ func _combat_tests() -> void:
 	check("bomb hurts a blob in range", is_instance_valid(mon) and mon.hp == 1, "hp %d" % (mon.hp if is_instance_valid(mon) else 0))
 	check("bomb spares a blob out of range", far_mon.hp == 3, "hp %d" % far_mon.hp)
 	check("you escaped your own bomb", p.hp == p.max_hp, "hp %d" % p.hp)
-	check("bomb count went down", p.inventory.count("bombs") == 4, "%d left" % p.inventory.count("bombs"))
+	await frames(int(level.t.bomb_regrow * 60.0) - 170 + 5)
+	check("context button pulls a bomb off its plant, which grows another in %.0f s" % level.t.bomb_regrow, pulled and plant.ripe(), "pulled %s, ripe again %s" % [pulled, plant.ripe()])
+	plant.queue_free()
 	mon.queue_free()
 	far_mon.queue_free()
 
@@ -563,14 +564,13 @@ func _move_tests(arena: Vector3) -> void:
 
 	# 33. Bombs: thrown while moving lands a few metres away, set down while still lands at your feet
 	await _fresh_player(Vector3(90, 0.6, -60))
-	p.inventory.add("bombs", 5)
-	p.ai_item = 0
-	await frames(3)
+	var bp := await _pull_bomb()
+	bp.queue_free()
 	var held := p.carrying
 	p.ai_move = Vector2(0, -1)
 	await frames(10)
 	var throw_from := p.global_position
-	p.ai_item = 0
+	p.ai_context = true
 	await frames(3)
 	p.ai_move = Vector2.ZERO
 	await frames(60)
@@ -578,11 +578,10 @@ func _move_tests(arena: Vector3) -> void:
 	check("thrown bomb lands a few metres ahead", throw_dist > 3.5 and throw_dist < 9.0, "%.1f m" % throw_dist)
 	await frames(120) # let it go off
 	await _fresh_player(Vector3(90, 0.6, -80))
-	p.inventory.add("bombs", 5)
-	p.ai_item = 0
-	await frames(3)
+	bp = await _pull_bomb()
+	bp.queue_free()
 	held = p.carrying
-	p.ai_item = 0
+	p.ai_context = true
 	await frames(30)
 	var set_dist := Vector2(held.global_position.x - p.global_position.x, held.global_position.z - p.global_position.z).length()
 	check("bomb set down at your feet", set_dist < 1.5, "%.1f m" % set_dist)
@@ -1039,10 +1038,9 @@ func _scale_tests(arena: Vector3) -> void:
 	# 53b. A bomb blows up a cracked wall too
 	await _fresh_player(arena)
 	var wall2 := CrackedWall.make(level, arena + Vector3(0, -0.6, -2.0), Vector3(2, 2.5, 0.5))
-	p.inventory.add("bombs", 1)
-	p.ai_item = p.inventory.slots.find("bombs")
-	await frames(3)
-	p.ai_item = p.inventory.slots.find("bombs") # standing still: set it down at your feet
+	var bp := await _pull_bomb()
+	bp.queue_free()
+	p.ai_context = true # standing still: set it down at your feet
 	await frames(3)
 	p.ai_move = Vector2(0, 1) # walk clear
 	await frames(40)
@@ -1224,7 +1222,7 @@ func _tool_tests(arena: Vector3) -> void:
 	# 59. A pin taken small, with the magnet on push and two hearts, brings all of that back from a link
 	await _fresh_player(arena + Vector3(3, 0, 5))
 	p.inventory.add("magnet")
-	p.inventory.add("bombs", 7)
+	p.inventory.add("potion", 2)
 	p.magnet_push = true
 	p.set_small(true)
 	p.hp = 4
@@ -1237,9 +1235,9 @@ func _tool_tests(arena: Vector3) -> void:
 	await frames(2)
 	var back := Pin.decode(link)
 	check("a feedback pin link restores position, size, magnet, hearts, items and note",
-		p.global_position.distance_to(at) < 0.3 and p.small and p.magnet_push and p.hp == 4 and p.inventory.count("bombs") == 7
+		p.global_position.distance_to(at) < 0.3 and p.small and p.magnet_push and p.hp == 4 and p.inventory.count("potion") == 2
 		and p.inventory.has("magnet") and p.facing.dot(Vector3.RIGHT) > 0.95 and back.get("note", "") == "jump here is too short",
-		"%.2f m off, small %s, push %s, hp %d, bombs %d" % [p.global_position.distance_to(at), p.small, p.magnet_push, p.hp, p.inventory.count("bombs")])
+		"%.2f m off, small %s, push %s, hp %d, potions %d" % [p.global_position.distance_to(at), p.small, p.magnet_push, p.hp, p.inventory.count("potion")])
 	check("junk text is not a pin", Pin.decode("hello there").is_empty() and Pin.decode("").is_empty(), "")
 	await _fresh_player(arena)
 	# 60. Every warp in the G menu lands you on a floor
@@ -1260,19 +1258,27 @@ func _use(id: String) -> void:
 	p.ai_item = p.inventory.slots.find(id)
 	await frames(2)
 
+## Grow a bomb plant beside you and pull its bomb with the context button. Returns the plant.
+func _pull_bomb() -> BombFlower:
+	var fl := BombFlower.make(level, p.global_position + Vector3(1.2, -p.radius(), 0), level.t)
+	await physics_frame
+	p.ai_context = true
+	await frames(3)
+	return fl
+
 ## Rootworks: seeds, trunks and roots from Propagule; the lash; the spider, its cable and gears from Winch.
 func _rootworks_tests(arena: Vector3) -> void:
 	var m: Dictionary = level.marks
 	var t: Tuning = level.t
 	# 61. Plant the seed on the soil and its root bridges the 14 m chasm
-	await _fresh_player(Vector3(63, 6.6, 69.4))
-	p.ai_attack = true # next to the seed: pick it up
+	await _fresh_player(Vector3(63, 6.6, 69.8))
+	p.ai_context = true # next to the seed: pick it up
 	await frames(3)
 	var picked := p.held_seed != null
 	await place(m["root_soil"]) # carry it to the soil at the chasm's edge
 	p.facing = Vector3.BACK
 	await frames(2)
-	p.ai_attack = true # on soil: plant it
+	p.ai_context = true # set down on soil: it plants
 	await frames(3)
 	var planted_seed: Seed = null
 	for n in get_nodes_in_group("seeds"):
@@ -1287,13 +1293,13 @@ func _rootworks_tests(arena: Vector3) -> void:
 	check("a seed picked up and planted on soil roots right across the 14 m chasm",
 		picked and planted_seed != null and span > 90.3, "root reaches z %.1f, far side at 90" % span)
 	await frames(2)
-	await place(Vector3(68, 6.6, 75.2)) # just past the trunk, on the root
+	await place(Vector3(68, 6.6, 76.4)) # just past the cube, on the root
 	p.ai_move = Vector2(0, 1)
 	await frames(150)
 	p.ai_move = Vector2.ZERO
 	check("you can walk the root across", p.global_position.z > 91.0 and p.global_position.y > 5.5,
 		"ended z %.1f y %.1f" % [p.global_position.z, p.global_position.y])
-	var tr := planted_seed.trunk_top() - planted_seed.global_position.y if planted_seed != null else 0.0
+	var tr := planted_seed.trunk_top() - (planted_seed.global_position.y - Seed.HALF) if planted_seed != null else 0.0
 	check("the trunk grows %.0f m" % t.trunk_height, absf(tr - t.trunk_height) < 0.5, "%.1f m" % tr)
 
 	# 62. Locked on, the lash fetches the seed off the 4.5 m ledge
@@ -1304,31 +1310,36 @@ func _rootworks_tests(arena: Vector3) -> void:
 	await frames(5)
 	await _use("lash")
 	p.ai_target = false
-	check("locked on, the lash fetches a seed off a 4.5 m ledge %.1f m away" % Vector3(64, 10.9, 104.6).distance_to(m["root_c_stand"]),
+	check("locked on, the lash fetches a seed off a 4.5 m ledge %.1f m away" % Vector3(64, 11.5, 106).distance_to(m["root_c_stand"]),
 		p.held_seed != null, "holding %s" % (p.held_seed != null))
 
-	# 63. Plant it in the mud at the ledge's foot, climb the trunk and step onto the ledge
-	await place(Vector3(64, 6.6, 102.9))
+	# 63. Plant it in the mud at the ledge's foot, then up the cube (2 m) and onto the 4.5 m ledge
+	await place(Vector3(64, 6.6, 100.3))
 	p.facing = Vector3.BACK
 	await frames(2)
-	p.ai_attack = true
+	p.ai_context = true
 	await frames(3)
 	var in_mud := p.held_seed == null
 	p.ai_move = Vector2(0, 1)
 	var top_y := 0.0
-	for i in 300:
+	for i in 400:
 		await physics_frame
 		top_y = maxf(top_y, p.global_position.y)
-		if p.global_position.z > 105.5 and p.is_on_floor():
+		if p.is_on_floor() and not p.ai_jump:
+			p.ai_jump = true
+		elif p.ai_jump and p.velocity.y < 0.0:
+			p.ai_jump = false
+		if p.global_position.z > 105.5 and p.is_on_floor() and p.global_position.y > 10.0:
 			break # on the ledge: stop pushing before you run off its far side
 	p.ai_move = Vector2.ZERO
+	p.ai_jump = false
 	await frames(30)
-	check("planted in mud, you climb the trunk and step onto the 4.5 m ledge",
+	check("planted in mud, the cube and a ledge grab get you onto the 4.5 m ledge",
 		in_mud and p.global_position.z > 104.3 and p.global_position.y > m["root_c_top"], "peak y %.1f, ended z %.1f y %.1f" % [top_y, p.global_position.z, p.global_position.y])
 
 	# 64. Dropped 3 m or more onto mud a seed spears in and plants itself; 2 m isn't enough
-	var high := Seed.make(level, Vector3(61, 6.0 + t.spear_drop + 0.6, 99), t)
-	var low := Seed.make(level, Vector3(66, 6.0 + 2.0, 99), t)
+	var high := Seed.make(level, Vector3(61, 6.0 + Seed.HALF + t.spear_drop + 0.1, 99), t)
+	var low := Seed.make(level, Vector3(61, 6.0 + Seed.HALF + 2.0, 101.8), t)
 	await frames(90)
 	check("a seed dropped %.0f m onto mud plants itself, one dropped 2 m doesn't" % t.spear_drop, high.planted and not low.planted,
 		"high %s, low %s" % [high.planted, low.planted])
@@ -1348,59 +1359,154 @@ func _rootworks_tests(arena: Vector3) -> void:
 	check("locked on, the lash pulls you %.0f m across the 14 m chasm to the post" % (60.5 - 45.0),
 		locked and p.global_position.x < m["root_b2_x"] and p.global_position.y > 5.5, "ended x %.1f y %.1f" % [p.global_position.x, p.global_position.y])
 
-	# 66. Steering the spider through the bars and past the gear lifts the gate; letting go keeps it up
+	# 66. Lash the spider and steer it round the caged gear: the rope wraps the gear and every metre that slides
+	# past it lifts the gate; unhooked, the gear keeps its angle
 	await _fresh_player(m["root_gear_stand"])
 	p.inventory.add("spider")
+	p.inventory.add("lash")
 	p.facing = Vector3.RIGHT
 	await frames(2)
-	await _use("spider")
+	await _use("spider") # out it goes, and you steer it
 	var sp: Spider = p.spider
-	var start_p := p.global_position
-	p.ai_move = Vector2(1, 0)
-	await frames(100)
-	p.ai_move = Vector2(0, 1)
-	await frames(80)
-	p.ai_move = Vector2.ZERO
-	var gate: Gate = m["root_gate"]
+	var steering := p.pilot == sp
+	await _use("spider") # back to you
+	var back_to_you := p.pilot == null and is_instance_valid(sp)
+	p.ai_target = true
+	await frames(5)
+	await _use("lash")
+	p.ai_target = false
+	var hooked := p.leash != null
+	await _use("spider") # steer it again: round the cage, south side first, so the rope loops the gear
 	var gear: Gear = m["root_gear"]
+	var gate: Gate = m["root_gate"]
+	var start_p := p.global_position
+	var bends := 0
+	for leg in [[Vector2(0, 1), 50], [Vector2(1, 0), 90], [Vector2(0, -1), 90], [Vector2(-1, 0), 160]]:
+		p.ai_move = leg[0]
+		for i in leg[1]:
+			await physics_frame
+			if p.leash != null:
+				bends = maxi(bends, p.leash.points.size() - 2)
+	p.ai_move = Vector2.ZERO
 	var rise := gate.global_position.y - 2.0
-	var cable := sp.cable.length() if sp != null and sp.cable != null else 0.0
-	check("steering, you sit still and the spider passes the bars", p.global_position.distance_to(start_p) < 0.2 and sp != null and sp.global_position.x > 55.0,
-		"you moved %.2f m, spider at x %.1f" % [p.global_position.distance_to(start_p), sp.global_position.x if sp != null else 0.0])
-	check("the cable stops at %.0f m" % t.spider_cable, cable <= t.spider_cable + 0.1 and cable > t.spider_cable - 1.0, "%.1f m" % cable)
-	check("cable sliding past the gear lifts the gate %.1f m per metre" % t.gear_ratio, rise > 3.5, "gate up %.1f m after %.1f m of cable past the gear" % [rise, gear.wound])
-	await _use("spider") # let go
+	var dragged := p.global_position.distance_to(start_p)
+	check("the spider item swaps who you steer, you or the spider", steering and back_to_you, "steering it %s, back to you %s" % [steering, back_to_you])
+	check("the rope bends round the caged gear and slides past it: the gate rises %.1f m per metre" % t.gear_ratio, hooked and bends > 0 and rise > 1.3,
+		"bends %d, gate up %.1f m after %.1f m of rope (%.1f signed), you were dragged %.1f m" % [bends, rise, gear.wound, gear.spun, dragged])
+	check("steering the spider at full length drags you", dragged > 2.0 and p.leash != null and p.leash.length() < t.leash_length + 0.3,
+		"dragged %.1f m, rope %.1f m" % [dragged, p.leash.length() if p.leash != null else 0.0])
+	await _use("spider") # back to you
+	await _use("lash") # unhook
 	await frames(5)
 	var kept := gate.global_position.y - 2.0
 	await place(Vector3(42, 0.6, 74))
 	p.ai_move = Vector2(0, 1)
 	await frames(90)
 	p.ai_move = Vector2.ZERO
-	check("let go, the gear keeps its angle and you walk under the gate", absf(kept - rise) < 0.01 and p.global_position.z > 77.5,
+	check("unhooked, the gear keeps its angle and you walk under the gate", absf(kept - rise) < 0.01 and p.global_position.z > 77.5,
 		"gate up %.1f m, you at z %.1f" % [kept, p.global_position.z])
 	p.stow_spider()
 
-	# 67. Lash the parked spider: it's a leash. At full length you tow it after you.
+	# 67. Lash the parked spider and walk away: at full length you drag it after you
 	await _fresh_player(arena)
 	p.inventory.add("spider")
 	p.inventory.add("lash")
 	p.facing = Vector3.RIGHT
 	await _use("spider")
-	await _use("spider") # let go at once: it waits beside you
+	await _use("spider") # back to you: it waits
 	var spider_at: Vector3 = p.spider.global_position
 	p.ai_target = true
 	await frames(5)
 	await _use("lash")
 	p.ai_target = false
-	var hooked := p.leash != null
+	hooked = p.leash != null
 	p.ai_move = Vector2(-1, 0)
 	await frames(180)
 	p.ai_move = Vector2.ZERO
 	var towed: float = p.spider.global_position.distance_to(spider_at)
 	var rope := p.leash.length() if p.leash != null else 0.0
-	check("the lash hooks the spider as a %.0f m leash that tows it" % t.leash_length, hooked and towed > 5.0 and rope < t.leash_length + 0.6,
-		"spider towed %.1f m, rope %.1f m" % [towed, rope])
+	check("the lash hooks the spider on a %.0f m taut rope; walking off you drag it" % t.leash_length, hooked and towed > 5.0 and rope < t.leash_length + 0.3,
+		"spider dragged %.1f m, rope %.1f m" % [towed, rope])
 	p.stow_spider()
+
+	# 67b. The rope bends round a wall's corner and straightens when the way clears
+	await _fresh_player(arena)
+	var pillar: StaticBody3D = level.box(arena + Vector3(0, 0.9, -4), Vector3(2, 3, 2), Basis(), Color.GRAY)
+	p.inventory.add("spider")
+	p.inventory.add("lash")
+	p.facing = Vector3.RIGHT
+	await _use("spider")
+	await _use("spider")
+	p.ai_target = true
+	await frames(5)
+	await _use("lash")
+	p.ai_target = false
+	await _use("spider") # steer it east, north past the pillar, then west to right behind it
+	p.ai_move = Vector2(1, 0)
+	await frames(20)
+	p.ai_move = Vector2(0, -1)
+	await frames(80)
+	p.ai_move = Vector2(-1, 0)
+	await frames(35)
+	var bent := p.leash.points.size() - 2 if p.leash != null else 0
+	p.ai_move = Vector2(1, 0) # back out east, where the way to you is clear
+	await frames(50)
+	p.ai_move = Vector2.ZERO
+	await frames(5)
+	var straight := p.leash.points.size() - 2 if p.leash != null else -1
+	check("the taut rope bends round a corner and lets go when the way is clear", bent >= 1 and straight == 0, "bends behind the pillar %d, after %d" % [bent, straight])
+	await _use("spider")
+	p.stow_spider()
+	pillar.queue_free()
+
+	# 67c. Unhooked, the spider breaks more than %.0f m from you and goes back in your pack
+	await _fresh_player(arena)
+	p.inventory.add("spider")
+	p.facing = Vector3.RIGHT
+	await _use("spider")
+	p.ai_move = Vector2(1, 0)
+	var farthest := 0.0
+	for i in 400:
+		await physics_frame
+		if p.spider == null:
+			break
+		farthest = maxf(farthest, p.spider.global_position.distance_to(p.global_position))
+	p.ai_move = Vector2.ZERO
+	check("an unhooked spider breaks past %.0f m and goes back in your pack" % t.spider_break, p.spider == null and p.pilot == null and p.inventory.has("spider") and farthest < t.spider_break + 0.5,
+		"spider out %s, got %.1f m away" % [p.spider != null, farthest])
+
+	# 67d. The spider is as big as you: bars stop it, you can stand on it, and the context button picks it up
+	await _fresh_player(Vector3(44, 0.6, 66)) # west of the cage
+	p.inventory.add("spider")
+	p.facing = Vector3.RIGHT
+	await _use("spider")
+	p.ai_move = Vector2(1, 0)
+	await frames(90)
+	p.ai_move = Vector2.ZERO
+	var sx := p.spider.global_position.x
+	await _use("spider")
+	await place(p.spider.global_position + Vector3(0, 1.6, 0))
+	await frames(20)
+	var on_top := p.global_position.y > p.spider.global_position.y + 0.8
+	await place(p.spider.global_position + Vector3(-1.3, 0, 0))
+	p.ai_context = true
+	await frames(3)
+	check("bars stop the spider, you can stand on it, and the context button picks it up", sx < 47.5 and on_top and p.spider == null,
+		"spider stopped at x %.1f (bars at 47.5), stood on it %s, picked up %s" % [sx, on_top, p.spider == null])
+
+	# 67e. A seed cube is a 2 m block you can jump onto
+	await _fresh_player(arena)
+	var cube := Seed.make(level, arena + Vector3(0, Seed.HALF - 0.55, -2.4), t)
+	await frames(20)
+	p.ai_jump = true
+	await frames(12)
+	p.ai_move = Vector2(0, -1)
+	await frames(30)
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	await frames(30)
+	check("a seed cube is %.0f m tall and you can jump onto it" % Seed.SIZE, p.global_position.y > Seed.SIZE + 0.3, "you at y %.1f" % p.global_position.y)
+	cube.queue_free()
 	await _fresh_player(arena)
 
 
@@ -1557,9 +1663,9 @@ func _moves_yard_tests(arena: Vector3) -> void:
 	var g := Gear.make(level, arena + Vector3(6, -0.6, 0), 1.0, null, Vector3.UP * 40.0, t)
 	p.inventory.add("spider")
 	await _use("spider")
-	await _use("spider") # let go: no cable while it waits
+	await _use("spider") # back to you: it waits, unhooked
 	var sp: Spider = p.spider
-	var had_cable := sp.cable != null
+	var had_cable := p.leash != null
 	var walked := 0.0
 	var at := arena + Vector3(4.4, 0.0, -3.0)
 	sp.global_position = at

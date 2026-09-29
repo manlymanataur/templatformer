@@ -28,13 +28,13 @@ Locally: open this folder in Godot 4.5 and press F5.
 | Grind rail | land or walk onto a rail. Downhill speeds you up, uphill slows you; jump hops off | |
 | Spin attack | hold attack until the tip glows, then let go | |
 | Use quick item 1 / 2 / 3 | 1 / 2 / 3 | Y / LB / RB |
-| Bomb: throw or set down | pull one out with its item button, then press attack or the button again. Moving throws it, standing still sets it down | |
+| Context action | E | B |
+| | Picks up a seed cube or the spider, pulls a bomb off a bomb plant, pulls a planted seed back up. Holding something: moving throws it, standing still sets it down; a seed set down on soil, mud or roots plants | |
 | Candle Hat (quick slot) | wear it to light the dark and set fire to vines, grass, ice and braziers | |
 | Umbra (quick slot) | call or dismiss the mirrored ghost. It floats in the dark and crawls in light, and in the dark it copies your attacks with a greatsword | |
 | Magnet (quick slot) | always on once you have it. The button flips it between − (pull) and + (push) | |
-| Lash (quick slot) | crack it ahead, or at what you're locked on to: it pulls you to a post or trunk, fetches a seed into your hands, stings and yanks a monster, or hooks the clockwork spider as a leash. Press again to unhook. Hands must be empty | |
-| Clockwork Spider (quick slot) | send it out and steer it while you sit still; press again to let go (it waits), and again to steer it or, standing next to it, pick it up | |
-| Seeds | attack next to one picks it up; attack while carrying plants it on soil, mud or roots, or throws it. Attack next to a trunk pulls it back up. Push into a trunk to climb it | |
+| Lash (quick slot) | crack it ahead, or at what you're locked on to: it pulls you to a post or trunk, fetches a seed into your hands, stings and yanks a monster, or hooks the clockwork spider on a taut rope. Press again to unhook. Hands must be empty | |
+| Clockwork Spider (quick slot) | the first press sends it out and you steer it; each press after swaps between steering it and steering yourself. Pick it up with the context button | |
 | Inventory (assign items to 1-3) | Enter | Start |
 | Respawn | R | Back |
 
@@ -61,16 +61,17 @@ Speed above your running top speed (from slopes, pads, launches) bleeds back dow
 
 Winch and Propagule, north-east of the monster arena up a 6 m ramp. The lash and the clockwork spider lie at the ramp's foot.
 
-- **Seeds** (Propagule). Planted on soil, mud or roots, a seed grows a trunk 8 m up (or to the ceiling) and four roots along the ground, each running straight out until something blocks it (18 m at most). Roots bridge gaps; trunks can be climbed and lashed to. A seed that falls 3 m or more onto mud spears in and plants itself. Your hands are full while you carry one.
-- **Lash** (Winch's leash and Propagule's lash in one rope). It reaches 16 m. Hooked on the spider, it becomes the leash: the spider is Winch's dog and you walk. The rope lies along your path, reels in when you walk back over it, and at 16 m it tows the spider after you.
-- **Clockwork Spider.** Steering it, you sit still like the dog and the spider is Winch's walker. Its 14 m cable pays out behind it and stops it at full length. It's small, so bars and grates don't stop it.
-- **Gears.** Any rope sliding past a gear (the cable or the leash) turns it like a belt, and the gear drives a lift or gate by 0.5 m per metre of rope. It keeps its angle when the rope drops, so you can wind it over several trips.
+- **Seeds** (Propagule) are 2 m cubes, one grid cell, big enough to jump on. Set down on soil, mud or roots, a seed plants: a trunk grows from its top to 8 m (or to the ceiling), and four roots run along the ground, each straight out until something blocks it (18 m at most). Roots bridge gaps; trunks can be climbed and lashed to. A seed that falls 3 m or more onto mud spears in and plants itself. Your hands are full while you carry one.
+- **Lash** (Winch's leash and Propagule's lash in one rope). It reaches 16 m. Hooked on the spider it's a taut 16 m rope: it runs straight and only bends around walls, ledges, gears and cubes, letting go of a bend once it swings clear. At full length, whichever of you you're steering drags the other.
+- **Clockwork Spider** (Winch's walker). It's as big as you: bars and grates stop it, and you can stand on it. The spider button swaps who you steer. It turns any gear it walks past. Unhooked, it breaks more than 30 m from you and goes back in your pack.
+- **Gears.** A gear turns when the spider walks past its teeth or when the rope, bent round it, slides over it (0.5 m of lift per metre). It keeps its angle when the rope comes off, so you can wind it over several trips.
+- **Bomb plants.** Bombs aren't an item. Pull one off a bomb plant with the context button and carry it; the plant grows another in 4 s.
 
 The rooms:
 1. **Root bridge.** Plant the seed on the soil at the edge of a 14 m chasm, and walk its root across.
-2. **Lash ledge.** Lock on to the seed on the 4.5 m ledge and lash it down. Plant it in the mud at the ledge's foot, climb the trunk, and step onto the ledge for the heart.
+2. **Lash ledge.** Lock on to the seed on the 4.5 m ledge and lash it down. Plant it in the mud at the ledge's foot, then climb the trunk (or jump on the cube and catch the ledge) for the heart.
 3. **Lash post.** Lock on to the post across the second 14 m chasm and lash it to be pulled over.
-4. **Gear room.** Stand by the bars and steer the spider through them, past the north side of the gear. The cable winds it and the gate to the heart rises.
+4. **Gear room.** The gear is in a cage of bars. Lash the spider and steer it round the cage, south side first, so the rope loops the gear; keep going and the rope slides over it, dragging you to the cage, and the gate to the heart rises.
 
 ## Ember & Umbra hall
 

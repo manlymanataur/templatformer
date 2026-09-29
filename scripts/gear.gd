@@ -10,6 +10,7 @@ var radius := 1.0
 var lift: Node3D = null
 var travel := Vector3.UP * 4.0 ## how far the lift moves from where it starts, fully wound
 var wound := 0.0 ## metres of rope that have turned it, clamped to the lift's travel
+var spun := 0.0 ## every turn ever, signed and unclamped (for tests)
 var _base := Vector3.ZERO
 var _teeth: Node3D
 var t: Tuning
@@ -85,6 +86,7 @@ func max_wind() -> float:
 
 ## Rope slid past the rim by metres (sign = direction).
 func turn(metres: float) -> void:
+	spun += metres
 	var before := wound
 	wound = clampf(wound + metres, 0.0, max_wind())
 	_teeth.rotation.y += (wound - before) / radius
