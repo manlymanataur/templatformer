@@ -58,6 +58,7 @@ var spear: Spear
 var carrying: Bomb = null
 var attack_held_t := 0.0
 var candle_lit := false ## wearing the lit candle hat
+var magnet_push := false ## magnet polarity: false = negative (pull), true = positive (push)
 var umbra: Umbra = null
 var last_wish := Vector3.ZERO ## this frame's movement input, which Umbra mirrors
 var _tap_t := -1.0 ## how long the stick has been out of neutral in the current tap, -1 when not tapping
