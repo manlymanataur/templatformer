@@ -15,6 +15,9 @@ Locally: open this folder in Godot 4.5 and press F5.
 | Jump (hold for higher) | Space | A |
 | Lock on | Shift or Z (hold) | left trigger |
 | Camera | mouse (click to capture, Esc to release), or I J K L | right stick |
+| Spear attack (once you've found it) | F or left click | X |
+| Use quick item 1 / 2 / 3 | 1 / 2 / 3 | Y / B / RB |
+| Inventory (assign items to 1-3) | Enter | Start |
 | Respawn | R | Back |
 
 The panel in the corner edits every feel number live: `[` `]` pick a value, `-` `=` change it by 10%,

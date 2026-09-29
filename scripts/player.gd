@@ -3,6 +3,7 @@ extends CharacterBody3D
 ## Momentum runner. On the ground, speed follows the surface: slopes add or take away speed,
 ## and fast enough you stick to walls and ceilings (loops). In the air, gravity is always world-down.
 ## Holding target locks onto the nearest target and turns movement into strafing.
+## Health is counted in half hearts; getting hurt gives knockback and a second of invincibility.
 
 var t: Tuning
 var cam_basis := Basis() ## yaw-only camera basis; stick input is read relative to it
@@ -22,8 +23,19 @@ var target: Node3D = null
 var facing := Vector3.FORWARD
 var visual: Node3D
 
+var max_hp := 6 ## half hearts: 6 = 3 hearts
+var hp := 6
+var invuln := 0.0
+const INVULN_TIME := 1.0
+var inventory := Inventory.new()
+var spear: Spear
+# Scripted input for tests: set to true for one frame to press the button
+var ai_attack := false
+var ai_item := -1
+
 func _ready() -> void:
-	collision_mask = 1 | 2 # world + the way up any loop
+	add_to_group("player")
+	add_to_group("hurtable")
 	floor_max_angle = deg_to_rad(55)
 	floor_snap_length = 0.7
 	floor_stop_on_slope = false
@@ -50,6 +62,9 @@ func _ready() -> void:
 	nose.position = Vector3(0, 0.1, -0.45)
 	nose.material_override = _mat(Color(0.95, 0.85, 0.7))
 	visual.add_child(nose)
+	spear = Spear.new()
+	spear.player = self
+	visual.add_child(spear)
 
 func _mat(c: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -67,7 +82,28 @@ func respawn() -> void:
 	velocity = Vector3.ZERO
 	up_direction = Vector3.UP
 	target = null
-	collision_mask = 1 | 2
+	hp = max_hp
+	invuln = 0.0
+
+func hurt(amount: int, from: Vector3) -> void:
+	if invuln > 0.0 or hp <= 0:
+		return
+	hp -= amount
+	invuln = INVULN_TIME
+	var away := global_position - from
+	away.y = 0
+	away = away.normalized() if away.length() > 0.01 else -facing
+	up_direction = Vector3.UP
+	velocity = away * 8.0 + Vector3.UP * 6.0
+	global_position += Vector3.UP * 0.05
+	if hp <= 0:
+		respawn()
+
+func place_bomb() -> void:
+	var f := facing - Vector3.UP * facing.dot(Vector3.UP)
+	var b := Bomb.new()
+	get_parent().add_child(b)
+	b.global_position = global_position + (f.normalized() if f.length() > 0.01 else Vector3.FORWARD) * 1.0 + Vector3.DOWN * 0.5
 
 func _wish() -> Vector3:
 	if ai:
@@ -90,6 +126,19 @@ func _physics_process(dt: float) -> void:
 		target_held = Input.is_action_pressed("target")
 		if Input.is_action_just_pressed("respawn"):
 			respawn()
+		if Input.is_action_just_pressed("attack") and inventory.has("spear"):
+			spear.attack()
+		for i in Inventory.SLOTS:
+			if Input.is_action_just_pressed("item_%d" % (i + 1)):
+				inventory.use(i, self)
+	if ai:
+		if ai_attack and inventory.has("spear"):
+			spear.attack()
+		if ai_item >= 0:
+			inventory.use(ai_item, self)
+		ai_attack = false
+		ai_item = -1
+	invuln = maxf(invuln - dt, 0.0)
 	_update_target(target_held)
 	var wish := _wish()
 	buffer = t.jump_buffer if jump_pressed else maxf(buffer - dt, 0.0)
@@ -152,6 +201,7 @@ func _physics_process(dt: float) -> void:
 	if global_position.y < -30.0:
 		respawn()
 	_update_visual(dt)
+	visual.visible = invuln <= 0.0 or fmod(invuln, 0.15) < 0.09
 
 ## Blend unit vector a toward b by k (0-1). Lerp-and-normalize stays stable when a and b are nearly parallel.
 func _turn(a: Vector3, b: Vector3, k: float) -> Vector3:

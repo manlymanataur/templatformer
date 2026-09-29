@@ -6,7 +6,8 @@ const KEYS := {
 	"move_forward": [KEY_W, KEY_UP], "move_back": [KEY_S, KEY_DOWN],
 	"jump": [KEY_SPACE], "target": [KEY_SHIFT, KEY_Z],
 	"cam_left": [KEY_J], "cam_right": [KEY_L], "cam_up": [KEY_I], "cam_down": [KEY_K],
-	"respawn": [KEY_R],
+	"respawn": [KEY_R], "attack": [KEY_F],
+	"item_1": [KEY_1], "item_2": [KEY_2], "item_3": [KEY_3], "inventory": [KEY_ENTER],
 }
 const PAD_AXES := {
 	"move_left": [JOY_AXIS_LEFT_X, -1.0], "move_right": [JOY_AXIS_LEFT_X, 1.0],
@@ -15,7 +16,8 @@ const PAD_AXES := {
 	"cam_up": [JOY_AXIS_RIGHT_Y, -1.0], "cam_down": [JOY_AXIS_RIGHT_Y, 1.0],
 	"target": [JOY_AXIS_TRIGGER_LEFT, 1.0],
 }
-const PAD_BUTTONS := {"jump": JOY_BUTTON_A, "respawn": JOY_BUTTON_BACK}
+const PAD_BUTTONS := {"jump": JOY_BUTTON_A, "respawn": JOY_BUTTON_BACK, "attack": JOY_BUTTON_X,
+	"item_1": JOY_BUTTON_Y, "item_2": JOY_BUTTON_B, "item_3": JOY_BUTTON_RIGHT_SHOULDER, "inventory": JOY_BUTTON_START}
 
 func _ready() -> void:
 	for action in KEYS:
@@ -30,6 +32,9 @@ func _ready() -> void:
 		m.axis = PAD_AXES[action][0]
 		m.axis_value = PAD_AXES[action][1]
 		InputMap.action_add_event(action, m)
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	InputMap.action_add_event("attack", click)
 	for action in PAD_BUTTONS:
 		var b := InputEventJoypadButton.new()
 		b.button_index = PAD_BUTTONS[action]

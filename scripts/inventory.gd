@@ -1,0 +1,63 @@
+class_name Inventory
+extends RefCounted
+## Ocarina-style inventory. The spear is equipment (always on the attack button).
+## Usable items go on three quick slots (keys 1-3, like the C buttons) from the pause screen.
+
+signal changed
+
+const ITEMS := {
+	"spear": {"name": "Spear", "color": Color(0.85, 0.75, 0.45), "slot": false, "max": 1},
+	"bombs": {"name": "Bombs", "color": Color(0.25, 0.25, 0.3), "slot": true, "max": 20},
+	"potion": {"name": "Red Potion", "color": Color(0.9, 0.2, 0.2), "slot": true, "max": 3},
+}
+const SLOTS := 3
+
+var counts := {}
+var slots: Array[String] = ["", "", ""]
+
+func count(id: String) -> int:
+	return int(counts.get(id, 0))
+
+func has(id: String) -> bool:
+	return count(id) > 0
+
+func owned() -> Array[String]:
+	var r: Array[String] = []
+	for id in ITEMS:
+		if counts.has(id):
+			r.append(id)
+	return r
+
+func add(id: String, n := 1) -> void:
+	counts[id] = mini(count(id) + n, int(ITEMS[id]["max"]))
+	if ITEMS[id]["slot"] and not slots.has(id):
+		var free := slots.find("")
+		if free >= 0:
+			slots[free] = id
+	changed.emit()
+
+## Put an item on a quick slot. If it was already on another slot, the two swap.
+func assign(slot: int, id: String) -> void:
+	if not ITEMS[id]["slot"]:
+		return
+	var old := slots.find(id)
+	if old >= 0:
+		slots[old] = slots[slot]
+	slots[slot] = id
+	changed.emit()
+
+## Use the item on a quick slot. Returns false when nothing happened (empty, none left, or no effect).
+func use(slot: int, player: Player) -> bool:
+	var id := slots[slot]
+	if id == "" or count(id) <= 0:
+		return false
+	match id:
+		"potion":
+			if player.hp >= player.max_hp:
+				return false
+			player.hp = player.max_hp
+		"bombs":
+			player.place_bomb()
+	counts[id] = count(id) - 1
+	changed.emit()
+	return true

@@ -15,7 +15,12 @@
 - `scripts/camera_rig.gd` is the orbit camera. It recenters behind your motion and frames the target while you're locked on.
 - `scripts/tuning.gd` holds every feel number. New feel values go here and into `Tuning.EDITABLE` so they show up in the live panel.
 - `scripts/level.gd` builds the test room in code. Tests start from positions it records in `marks`.
-- Loops use Sonic's layer trick. The way up is on collision layer 2 and the way down on layer 3. Zones switch the player's mask at the top and reset it at either end.
+- Health is in half hearts (`Player.max_hp` 6 = 3 hearts). Anything that can be damaged is in group `hurtable` and has `hurt(amount, from_pos)`. That's the player, monsters, and whatever bombs and the spear hit.
+- `scripts/inventory.gd` holds item definitions (`ITEMS`), counts and the three quick slots (keys 1-3, like Ocarina's C buttons). The spear is equipment: owning it enables the attack button. New items go in `ITEMS` and in the `match` in `use()`.
+- `scripts/spear.gd` does the thrust. It hits each hurtable once per thrust, using a shape query during the active window.
+- `scripts/monster.gd` is the basic blob. It's in groups `monsters`, `targets` (lock-on) and `hurtable`, and it recoils after touching you.
+- `scripts/game_hud.gd` draws the hearts, the quick slots and the pause inventory (Enter). It runs while the game is paused.
+- jovi dropped loops (2026-09-29). Don't bring them back without asking.
 
 ## Working rules
 
