@@ -18,6 +18,7 @@ var _mat: StandardMaterial3D
 
 static func spawn(parent: Node, pos: Vector3) -> Monster:
 	var m := Monster.new()
+	m.position = pos # placed before it enters the tree, so the physics never sees it jump from the origin
 	parent.add_child(m)
 	m.global_position = pos
 	m.home = pos
@@ -58,6 +59,8 @@ func _player() -> Player:
 	return ps[0] as Player if ps.size() > 0 else null
 
 func _physics_process(dt: float) -> void:
+	var world := Hitfx.world
+	dt *= world # a perfect dodge slows monsters down
 	_t += dt
 	velocity.y -= GRAVITY * dt
 	var p := _player()
@@ -91,7 +94,9 @@ func _physics_process(dt: float) -> void:
 			# recoil after landing a hit so it doesn't grind against you
 			stun = 0.6
 			velocity = -flat.normalized() * 5.0 + Vector3.UP * 2.0
+	velocity *= world
 	move_and_slide()
+	velocity /= world
 	if global_position.y < -30.0:
 		queue_free()
 

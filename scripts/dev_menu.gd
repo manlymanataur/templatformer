@@ -32,6 +32,10 @@ const WARPS := [
 	["Rootworks: lash ledge", "root_c_stand"],
 	["Rootworks: lash post", "root_post_stand"],
 	["Rootworks: gear room", "root_gear_room"],
+	["Moves: climb tower", "moves_climb"],
+	["Moves: grind rail", "moves_rail"],
+	["Moves: pogo spikes", "moves_pogo"],
+	["Moves: ledge grab", "moves_ledge"],
 ]
 const SHOWN := 12 ## rows the menu shows at once
 const ACTIONS := ["Give every item", "God mode", "Heal", "Shrink / grow"]
@@ -215,8 +219,7 @@ func warp_pos(key: String) -> Vector3:
 	return m if m is Vector3 else player.spawn
 
 func warp(key: String) -> void:
-	player.global_position = warp_pos(key) + Vector3.UP * 0.4
-	player.velocity = Vector3.ZERO
+	player.teleport(warp_pos(key) + Vector3.UP * 0.4)
 	player.up_direction = Vector3.UP
 	player.target = null
 	if rig != null:

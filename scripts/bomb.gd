@@ -60,6 +60,7 @@ func _physics_process(dt: float) -> void:
 
 func explode() -> void:
 	_exploded = true
+	Hitfx.shake(get_tree(), 0.35)
 	if holder != null and holder.carrying == self:
 		holder.carrying = null
 	for n in get_tree().get_nodes_in_group("hurtable"):

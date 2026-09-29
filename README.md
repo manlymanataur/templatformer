@@ -20,7 +20,12 @@ Locally: open this folder in Godot 4.5 and press F5.
 | Dodge while locked on | quick tap of the stick: sideways side hop, back backflip, forward roll | same |
 | Camera | mouse (click to capture, Esc to release), or I J K L | right stick |
 | Spear attack (once you've found it) | F or left click | X |
-| Combo / long slash / air slash | tap attack up to 3 times / attack while running / attack in the air | |
+| Combo / long slash | tap attack up to 3 times / attack while running | |
+| Homing attack / air slash | attack in the air: you home in on the nearest monster or spike ball ahead (or what you're locked on to), hit it and bounce up, ready to home in on the next. Nothing in reach: an air slash | |
+| Perfect dodge | get hit during a roll's i-frames: no damage, and the world slows to 30% for 1.5 s while you don't | |
+| Climb | push into vines (or a trunk) to climb as high as they go; jump kicks off | |
+| Ledge grab | fall against a wall whose top is within 1.2 m above you: you hang. Push on or jump to pull up, pull away to drop. Iron is too smooth to grab | |
+| Grind rail | land or walk onto a rail. Downhill speeds you up, uphill slows you; jump hops off | |
 | Spin attack | hold attack until the tip glows, then let go | |
 | Use quick item 1 / 2 / 3 | 1 / 2 / 3 | Y / LB / RB |
 | Bomb: throw or set down | pull one out with its item button, then press attack or the button again. Moving throws it, standing still sets it down | |
@@ -45,6 +50,10 @@ Backspace resets it, Tab hides the panel. Changes are saved and survive restarts
 | O | Load a pin: paste a pin link or code |
 
 Opening a pin link loads the game straight into that spot.
+
+## Moves yard
+
+South of the start. One station per move: an 8 m vine tower to climb, a grind rail from its top that runs 4 m downhill (about 18 m/s) and kicks you over a 10 m gap, two spike balls to homing-pogo up to an 8 m ledge (touching spikes hurts), and a 3.5 m block to catch by the ledge. Hits freeze the game for a moment, shake the camera and throw sparks.
 
 Speed above your running top speed (from slopes, pads, launches) bleeds back down on flat ground. Running downhill still builds it.
 

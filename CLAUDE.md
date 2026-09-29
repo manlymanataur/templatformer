@@ -46,6 +46,13 @@
   - The Lash item (`Player.use_lash`) is Winch's leash plus Propagule's lash. It grapples to `lash_posts`, fetches loose seeds, stings hurtables, and hooks the spider as a leash.
   - The Clockwork Spider (`Spider`): piloting it, the player sits still (Winch's dog) and inputs go to `Spider.wish`. Lashed, the spider is the dog and the player walks.
   - `Tether` is Winch's rope for both: it follows the walker's path, reels in on backtracking, stops (`tows = false`) or tows the anchor at `max_len`, and turns every `Gear` it slides past. `Gear` drives a lift by `gear_ratio` and keeps its angle.
+- `scripts/moves_yard.gd` (marks `moves_`) shows the acclaimed moves in `player.gd`:
+  - Climbing: push into anything in group `climbable` (vines, trunks), no grip limit (jovi). `_climb_step` vaults at the top.
+  - Ledge grab: falling against a wall with its top within `ledge_reach` hangs you (`hang`). Iron (`IronCube`) can't be grabbed, so it still needs a triple jump.
+  - Grind rails (`scripts/rail.gd`, group `rails`, no collision): gravity along the rail, jump hops off.
+  - Homing attack: air attack homes on the nearest `hurtable` or `pogo` node ahead, hits it once (it shares the spear's hit list) and bounces you straight up off its top. `Spikes` (group `pogo`) hurt on touch.
+  - Perfect dodge: a hit during a roll calls `Hitfx.slow`; `Hitfx.world` slows monsters (they multiply their dt by it).
+  - `scripts/hitfx.gd`: hitstop (`Engine.time_scale`), camera shake (group `camera_rig`), sparks.
 - `scripts/game_hud.gd` draws the hearts, the quick slots and the pause inventory (Enter). It runs while the game is paused.
 - jovi dropped loops (2026-09-29). Don't bring them back without asking.
 

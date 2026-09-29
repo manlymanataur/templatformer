@@ -21,6 +21,7 @@ var home := Vector3.ZERO
 
 static func make(parent: Node3D, pos: Vector3) -> IronCube:
 	var c := IronCube.new()
+	c.position = pos # placed before it enters the tree, so the physics never sees it jump from the origin
 	parent.add_child(c)
 	c.global_position = pos
 	c.home = pos

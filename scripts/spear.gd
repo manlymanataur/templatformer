@@ -173,3 +173,4 @@ func _hit_query(def: Dictionary) -> void:
 		if c != null and c.is_in_group("hurtable") and not _hit.has(c):
 			_hit.append(c)
 			c.hurt(int(def["dmg"]), player.global_position)
+			Hitfx.hit(get_tree(), (c as Node3D).global_position, player.t, 1.3 if int(def["dmg"]) > 1 else 1.0)

@@ -322,6 +322,7 @@ func _combat_tests() -> void:
 	await _scale_tests(arena)
 	await _tool_tests(arena)
 	await _rootworks_tests(arena)
+	await _moves_yard_tests(arena)
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -1401,3 +1402,176 @@ func _rootworks_tests(arena: Vector3) -> void:
 		"spider towed %.1f m, rope %.1f m" % [towed, rope])
 	p.stow_spider()
 	await _fresh_player(arena)
+
+
+## The moves yard: climbing, ledge grabs, grind rails, homing pogo, perfect dodges and hit feel.
+func _moves_yard_tests(arena: Vector3) -> void:
+	var m: Dictionary = level.marks
+	var t: Tuning = level.t
+
+	# 68. Push into the vines and you climb the whole 8 m face, then pull yourself over the top
+	await _fresh_player(m["moves_climb"])
+	p.ai_move = Vector2(0, -1)
+	var climbed := false
+	for i in 300:
+		await physics_frame
+		climbed = climbed or p.climbing != null
+		if p.is_on_floor() and p.global_position.y > 7.0:
+			break
+	p.ai_move = Vector2.ZERO
+	var top: float = m["moves_climb_top"]
+	check("vines climb all %.0f m at %.0f m/s and you pull over the top" % [top, t.climb_speed],
+		climbed and p.global_position.y > top + 0.3 and p.global_position.z < -68.5, "climbed %s, ended y %.1f z %.1f" % [climbed, p.global_position.y, p.global_position.z])
+
+	# 69. A single jump (2.4 m) against the 3.5 m block catches the ledge; pushing on pulls you up
+	await _fresh_player(m["moves_ledge"])
+	p.ai_move = Vector2(0, -1)
+	var hung := false
+	var jumped := false
+	for i in 240:
+		await physics_frame
+		if not jumped and p.global_position.z < -73.8:
+			p.ai_jump = true
+			jumped = true
+		elif jumped and p.velocity.y < 0.0:
+			p.ai_jump = false
+		hung = hung or p.hang != Vector3.ZERO
+		if p.is_on_floor() and p.global_position.y > 3.0:
+			break
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	var ledge: float = m["moves_ledge_top"]
+	check("a single jump catches a %.1f m ledge (reach %.1f m) and pulls up" % [ledge, t.ledge_reach],
+		hung and p.global_position.y > ledge + 0.3, "hung %s, ended y %.1f" % [hung, p.global_position.y])
+	# iron stays smooth: see test 49, a double jump still can't get over it
+
+	# 70. Walk onto the rail: grinding 4 m downhill builds speed and the kicker throws you across a 10 m gap
+	await _fresh_player(m["moves_rail"])
+	p.ai_move = Vector2(0, -1)
+	var fastest := 0.0
+	var ground := false
+	for i in 300:
+		await physics_frame
+		if p.rail != null:
+			ground = true
+			fastest = maxf(fastest, p.rail_speed)
+		if ground and p.rail == null and p.is_on_floor():
+			break
+	p.ai_move = Vector2.ZERO
+	var land: float = m["moves_rail_land"]
+	var want := sqrt(t.rail_min_speed * t.rail_min_speed + 2.0 * t.gravity * 4.0)
+	check("a 4 m downhill rail builds you to %.0f m/s" % want, ground and absf(fastest - want) < 1.5, "grinding at %.1f m/s" % fastest)
+	check("the rail's kicker throws you across the 10 m gap", p.global_position.z < land - 0.3 and p.global_position.y > 2.3,
+		"landed z %.1f y %.1f, platform from z %.0f at 2 m" % [p.global_position.z, p.global_position.y, land])
+
+	# 71. Spikes hurt to touch
+	await _fresh_player(Vector3(0, 0.6, -74))
+	p.ai_jump = true
+	await frames(30)
+	p.ai_jump = false
+	await frames(30)
+	check("jumping into spikes hurts", p.hp < p.max_hp, "hp %d of %d" % [p.hp, p.max_hp])
+
+	# 72. Homing attack: an air attack near spikes homes in and pogos you up unharmed; two climb the 8 m ledge
+	await _fresh_player(m["moves_pogo"])
+	p.inventory.add("spear")
+	p.ai_move = Vector2(0, -0.4)
+	p.ai_jump = true
+	var bounces := 0
+	var was_homing := false
+	for i in 360:
+		await physics_frame
+		if p.homing != null:
+			was_homing = true
+		elif was_homing:
+			was_homing = false
+			bounces += 1
+		p.ai_attack = not p.is_on_floor() and p.velocity.y < 1.0 and p.homing == null and bounces < 2
+		if bounces >= 2:
+			p.ai_move = Vector2(0, -1)
+			p.ai_jump = false
+		if bounces >= 2 and p.is_on_floor():
+			break
+	p.ai_attack = false
+	p.ai_move = Vector2.ZERO
+	check("homing pogo: two spikes (%.0f m/s bounce) reach the 8 m ledge unharmed" % t.pogo_speed,
+		bounces == 2 and p.global_position.y > 8.3 and p.hp == p.max_hp, "bounces %d, ended y %.1f, hp %d" % [bounces, p.global_position.y, p.hp])
+
+	# 73. Homing onto a blob hits it once for 2 and bounces you
+	await _fresh_player(arena)
+	p.inventory.add("spear")
+	var mon := _monster_ahead(4.0)
+	mon.stun = 20.0
+	mon.hp = 10
+	p.ai_jump = true
+	await frames(10)
+	p.ai_jump = false
+	p.ai_attack = true
+	var rose := false
+	for i in 60:
+		await physics_frame
+		rose = rose or (mon.hp < 10 and p.velocity.y > t.pogo_speed * 0.8)
+	p.ai_attack = false
+	check("homing onto a blob 4 m away hits it once and bounces", mon.hp == 8 and rose, "blob hp %d, bounced %s" % [mon.hp, rose])
+	mon.queue_free()
+
+	# 74. Hit feel: a spear hit freezes the game briefly, then it runs again
+	await _fresh_player(arena)
+	p.inventory.add("spear")
+	mon = _monster_ahead(1.6)
+	mon.stun = 20.0
+	mon.hp = 10
+	p.ai_attack = true
+	var froze := false
+	for i in 20:
+		await physics_frame
+		froze = froze or Engine.time_scale < 0.5
+	p.ai_attack = false
+	await create_timer(0.3, true, false, true).timeout
+	check("a spear hit stops the game for %.2f s, then it resumes" % t.hitstop, froze and Engine.time_scale == 1.0, "froze %s, time scale now %.2f" % [froze, Engine.time_scale])
+	mon.queue_free()
+
+	# 75. Perfect dodge: a hit that lands during a roll's i-frames slows the world instead
+	await _fresh_player(arena)
+	mon = _monster_ahead(6.0)
+	mon.stun = 60.0
+	p.ai_target = true
+	await frames(10)
+	var f := p._flat_facing()
+	p.ai_move = Vector2(f.x, f.z)
+	await frames(5)
+	p.ai_move = Vector2.ZERO
+	await frames(2)
+	var rolling := p.dodging()
+	p.hurt(1, mon.global_position)
+	await frames(2)
+	var slowed := Hitfx.world
+	check("a hit during a roll is a perfect dodge: no damage, monsters at x%.1f for %.1f s" % [t.dodge_slow_speed, t.dodge_slow_time],
+		rolling and p.hp == p.max_hp and absf(slowed - t.dodge_slow_speed) < 0.01, "rolling %s, hp %d, world speed %.2f" % [rolling, p.hp, slowed])
+	p.ai_target = false
+	Hitfx.slow_left = 0.0
+	mon.queue_free()
+
+	# 76. The spider turns a gear by walking past it, with no cable at all
+	await _fresh_player(arena)
+	var g := Gear.make(level, arena + Vector3(6, -0.6, 0), 1.0, null, Vector3.UP * 40.0, t)
+	p.inventory.add("spider")
+	await _use("spider")
+	await _use("spider") # let go: no cable while it waits
+	var sp: Spider = p.spider
+	var had_cable := sp.cable != null
+	var walked := 0.0
+	var at := arena + Vector3(4.4, 0.0, -3.0)
+	sp.global_position = at
+	await frames(3)
+	for i in 60:
+		var nxt := at + Vector3(0, 0, 0.1)
+		sp.global_position = Vector3(nxt.x, sp.global_position.y, nxt.z)
+		walked += 0.1
+		at = nxt
+		await physics_frame
+	check("the spider walking past a gear turns it, no cable needed", not had_cable and g.wound > 1.5 and g.wound <= walked + 0.01,
+		"cable %s, wound %.1f m over %.1f m walked" % [had_cable, g.wound, walked])
+	p.stow_spider()
+	g.queue_free()
+
