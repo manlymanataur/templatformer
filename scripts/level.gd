@@ -244,8 +244,8 @@ func _build() -> void:
 	# Item pickups near the start
 	Pickup.spawn(self, "spear", 1, Vector3(4, 0.8, 4))
 	label(Vector3(4, 2.4, 4), "spear")
-	Pickup.spawn(self, "bombs", 5, Vector3(8, 0.8, 4))
-	label(Vector3(8, 2.4, 4), "bombs")
+	BombFlower.make(self, Vector3(8, 0, 4), t)
+	label(Vector3(8, 2.4, 4), "bomb plant (E)")
 	Pickup.spawn(self, "potion", 1, Vector3(12, 0.8, 4))
 	label(Vector3(12, 2.4, 4), "potion")
 	marks["pickups"] = Vector3(4, 0.6, 8)

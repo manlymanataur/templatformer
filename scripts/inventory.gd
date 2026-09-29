@@ -7,14 +7,13 @@ signal changed
 
 const ITEMS := {
 	"spear": {"name": "Spear", "color": Color(0.85, 0.75, 0.45), "slot": false, "max": 1},
-	"bombs": {"name": "Bombs", "color": Color(0.25, 0.25, 0.3), "slot": true, "max": 20},
 	"potion": {"name": "Red Potion", "color": Color(0.9, 0.2, 0.2), "slot": true, "max": 3},
 	# toggles: using one switches it on or off, nothing is used up
 	"candle": {"name": "Candle Hat", "color": Color(1.0, 0.75, 0.35), "slot": true, "max": 1, "toggle": true},
 	"umbra": {"name": "Umbra", "color": Color(0.45, 0.38, 1.0), "slot": true, "max": 1, "toggle": true},
 	# the magnet is always on: using it flips between pull (negative) and push (positive)
 	"magnet": {"name": "Magnet", "color": Color(0.3, 0.55, 1.0), "slot": true, "max": 1, "toggle": true},
-	# the clockwork spider: send it out and steer it; hooked with the lash, it's the anchor of a leash
+	# the clockwork spider: switches who you steer, you or it; hooked with the lash, a taut rope joins you
 	"spider": {"name": "Clockwork Spider", "color": Color(0.6, 0.55, 0.5), "slot": true, "max": 1, "toggle": true},
 	# Winch's leash and Propagule's lash in one rope
 	"lash": {"name": "Lash", "color": Color(0.85, 0.7, 0.4), "slot": true, "max": 1, "toggle": true},
@@ -58,9 +57,6 @@ func assign(slot: int, id: String) -> void:
 ## Use the item on a quick slot. Returns false when nothing happened (empty, none left, or no effect).
 func use(slot: int, player: Player) -> bool:
 	var id := slots[slot]
-	if id == "bombs" and player.carrying != null:
-		player.release_bomb() # second press throws or sets down the bomb you're holding
-		return false
 	if id == "" or count(id) <= 0:
 		return false
 	match id:
@@ -86,8 +82,6 @@ func use(slot: int, player: Player) -> bool:
 			if player.hp >= player.max_hp:
 				return false
 			player.hp = player.max_hp
-		"bombs":
-			player.pull_bomb()
 	counts[id] = count(id) - 1
 	changed.emit()
 	return true

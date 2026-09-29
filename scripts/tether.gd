@@ -1,38 +1,41 @@
 class_name Tether
 extends Node3D
-## A rope from Winch: it lies along the path the walker took from the anchor.
-## Walk out and it pays out behind you; walk back along it and it reels in. It can't pay out past max_len:
-## a walker that can tow (the lash on the spider) drags the anchor along the rope instead; one that can't
-## (the spider's cable) stops at full length.
-## The rope slides as it pays out, reels in or tows, and every Gear it runs past turns like a belt.
-## Used two ways: the spider's cable (anchor = you sitting still, walker = the spider) and the lash hooked
-## on the spider (anchor = the spider, walker = you).
+## The lash hooked on the clockwork spider: a taut rope from you (a, the reel) to the spider (b).
+## It runs straight and only bends around level features (walls, ledges, gears, seed cubes); when the way
+## around a bend clears, the bend lets go. It reels in any slack, so it's always under tension.
+## At max_len, whoever is being steered (lead) drags the other end along the rope.
+## Rope sliding past a gear turns it like a belt (see Gear.turn).
 
-const SPACING := 0.5 ## a new rope point every half metre walked
+const LIFT := Vector3.UP * 0.1 ## the rope hangs from just above each body's middle
+const MASK := 1 | 1 << 4 ## level features and props (seed cubes); bars and grates let it through
+const OFF := 0.12 ## bends sit this far out from the surface they wrap
 
-var anchor: Node3D
-var walker: Node3D
-var max_len := 14.0
-var tows := false ## at full length, drag the anchor instead of stopping the walker
-var points: Array[Vector3] = [] ## anchor end first; the last point is the walker
+var a: Node3D ## your end: the reel
+var b: Node3D ## the spider's end
+var lead: Node3D ## the end being steered this frame; the other one gets dragged
+var max_len := 16.0
+var points: Array[Vector3] = [] ## a's end first, then the bends, then b's end
+var turns: Array[float] = [] ## per point: which way the rope turns at that bend (+1 / -1; 0 at the ends)
 var color := Color(0.85, 0.7, 0.4)
 var _mesh: ImmediateMesh
-var _prev_len := 0.0
+var _gear_len := {} ## gear -> [its first bend, rope from you to it, whole rope], last frame
+var _last_end := {} ## 0 / 1 -> where a's / b's end was at the end of last frame
 
-static func make(parent: Node, from: Node3D, to: Node3D, length: float, towing: bool, col: Color) -> Tether:
+static func make(parent: Node, from: Node3D, to: Node3D, length: float, col: Color) -> Tether:
 	var t := Tether.new()
-	t.anchor = from
-	t.walker = to
+	t.a = from
+	t.b = to
+	t.lead = from
 	t.max_len = length
-	t.tows = towing
 	t.color = col
-	t.points = [from.global_position, to.global_position]
-	t._prev_len = t.length()
+	t.points = [from.global_position + LIFT, to.global_position + LIFT]
+	t.turns = [0.0, 0.0]
 	parent.add_child(t)
 	return t
 
 func _ready() -> void:
 	top_level = true
+	process_physics_priority = 100 # after both ends have moved this frame
 	_mesh = ImmediateMesh.new()
 	var mi := MeshInstance3D.new()
 	mi.mesh = _mesh
@@ -48,95 +51,148 @@ func length() -> float:
 		l += points[i].distance_to(points[i + 1])
 	return l
 
-## Length of the rope that's laid down, not counting the last stretch to the walker.
-func _laid() -> float:
+## Rope length from point i to b's end.
+func _to_b(i: int) -> float:
 	var l := 0.0
-	for i in points.size() - 2:
-		l += points[i].distance_to(points[i + 1])
+	for k in range(i, points.size() - 1):
+		l += points[k].distance_to(points[k + 1])
 	return l
 
-## Call after the walker has moved this frame.
-func update() -> void:
-	if not is_instance_valid(anchor) or not is_instance_valid(walker):
+func _physics_process(dt: float) -> void:
+	if not is_instance_valid(a) or not is_instance_valid(b):
+		queue_free()
 		return
-	var tow := 0.0
-	points[0] = anchor.global_position
-	var w := walker.global_position
-	# walking back over the rope reels it in
-	while points.size() >= 3 and w.distance_to(points[points.size() - 3]) < SPACING * 0.9:
-		points.remove_at(points.size() - 2)
-	if w.distance_to(points[points.size() - 2]) >= SPACING:
-		points.insert(points.size() - 1, w)
-	points[points.size() - 1] = w
+	_follow()
+	_wrap()
 	var over := length() - max_len
 	if over > 0.0:
-		if tows:
-			tow = _drag_anchor(over)
-		else:
-			# the cable is at full length: hold the walker at the end of it
-			var last := points[points.size() - 2]
-			var room := max_len - _laid()
-			var d := w - last
-			if d.length() > room and d.length() > 0.001:
-				var body := walker as CharacterBody3D
-				var fixed := last + d.normalized() * maxf(room, 0.0)
-				walker.global_position = Vector3(fixed.x, w.y, fixed.z)
-				if body != null:
-					var out := d.normalized()
-					var v := body.velocity
-					var along := Vector3(v.x, 0, v.z).dot(Vector3(out.x, 0, out.z).normalized())
-					if along > 0.0:
-						body.velocity -= Vector3(out.x, 0, out.z).normalized() * along
-				points[points.size() - 1] = walker.global_position
-	var len_now := length()
-	var slide := (len_now - _prev_len) + tow
-	_prev_len = len_now
-	if absf(slide) > 0.0001:
-		_turn_gears(slide)
+		var dragged := b if lead == a else a
+		_pull(dragged, over, dt)
+		_follow()
+		_wrap()
+		over = length() - max_len
+		if over > 0.02:
+			_pull(lead, over, dt) # the dragged end is stuck: the lead can't go further
+			_follow()
+	_turn_gears()
 	_draw()
 
-## Towing: move the anchor forward along the rope by dist. Returns how far it went.
-func _drag_anchor(dist: float) -> float:
-	var left := dist
-	while left > 0.0 and points.size() > 2:
-		var seg := points[1] - points[0]
-		if seg.length() <= left:
-			left -= seg.length()
-			points.remove_at(0)
-		else:
-			points[0] += seg.normalized() * left
-			left = 0.0
-	var a := points[0]
-	anchor.global_position = Vector3(a.x, maxf(a.y, anchor.global_position.y), a.z)
-	return dist - left
+func _follow() -> void:
+	points[0] = a.global_position + LIFT
+	points[points.size() - 1] = b.global_position + LIFT
 
-## Every gear the rope runs past turns by how far the rope slid, one way or the other depending on
-## which side of the gear the rope passes.
-func _turn_gears(slide: float) -> void:
+func _ray(from: Vector3, to: Vector3) -> Dictionary:
+	var ex: Array[RID] = []
+	for n in [a, b]:
+		if n is CollisionObject3D:
+			ex.append((n as CollisionObject3D).get_rid())
+	var q := PhysicsRayQueryParameters3D.create(from, to, MASK, ex)
+	return get_world_3d().direct_space_state.intersect_ray(q)
+
+## Bend around whatever now blocks either end's straight run, and let go of bends the rope no longer touches.
+## A new bend goes at the corner: between where the end was last frame (clear) and where it is now (blocked),
+## a few halvings find the last clear line, and the bend sits just outside the obstacle on that line.
+func _wrap() -> void:
+	for side in [1, 0]:
+		for _k in 4:
+			var n := points.size()
+			var end := n - 1 if side == 1 else 0
+			var prev := n - 2 if side == 1 else 1
+			var from := points[prev]
+			var to := points[end]
+			var hit := _ray(from, to)
+			if hit.is_empty():
+				break
+			var at: Vector3 = hit["position"] + (hit["normal"] as Vector3) * OFF
+			var was: Vector3 = _last_end[side] if _last_end.has(side) else to
+			if _ray(from, was).is_empty():
+				var lo := was
+				var hi := to
+				for _i in 8:
+					var mid := lo.lerp(hi, 0.5)
+					if _ray(from, mid).is_empty():
+						lo = mid
+					else:
+						hi = mid
+				var h := _ray(from, hi)
+				var hp: Vector3 = h["position"] if not h.is_empty() else hit["position"]
+				var corner := from + (lo - from).normalized() * from.distance_to(hp)
+				var away := corner - hp
+				if away.length() < 0.001:
+					away = h["normal"] if not h.is_empty() else hit["normal"]
+				at = corner + away.normalized() * OFF
+			if at.distance_to(from) < 0.05 or at.distance_to(to) < 0.05:
+				break
+			var k := end if side == 1 else 1
+			points.insert(k, at)
+			turns.insert(k, _turn_at(k))
+		_last_end[side] = points[points.size() - 1 if side == 1 else 0]
+	# a bend lets go once the rope would turn the other way there: it has swung off whatever it wrapped
+	var changed := true
+	while changed and points.size() > 2:
+		changed = false
+		for i in range(1, points.size() - 1):
+			var now := _turn_at(i)
+			if now != 0.0 and now != turns[i] and _ray(points[i - 1], points[i + 1]).is_empty():
+				points.remove_at(i)
+				turns.remove_at(i)
+				changed = true
+				break
+
+## Which way the rope turns at point i, seen from above: +1, -1, or 0 when it runs straight on.
+func _turn_at(i: int) -> float:
+	var u := points[i] - points[i - 1]
+	var v := points[i + 1] - points[i]
+	var c := u.x * v.z - u.z * v.x
+	return 0.0 if absf(c) < 0.0001 else signf(c)
+
+## Drag the body at one end along the rope, toward its first bend, by dist. It slides like it walked there
+## (so floor seams and slopes don't snag it), and loses any speed away from the rope.
+func _pull(body: Node3D, dist: float, dt: float) -> void:
+	var here := body.global_position + LIFT
+	var toward := points[1] if body == a else points[points.size() - 2]
+	var dir := (toward - here).normalized()
+	var cb := body as CharacterBody3D
+	if cb == null:
+		body.global_position += dir * dist
+		return
+	var v := cb.velocity
+	cb.velocity = dir * dist / maxf(dt, 0.001)
+	cb.move_and_slide()
+	var along := v.dot(-dir)
+	cb.velocity = v + dir * along if along > 0.0 else v
+
+## A gear the rope is wrapped round (a bend sits on its rim) turns by how far the rope slid over it, one way
+## or the other depending on which side the rope passes. The rope pays out from your reel, so what slides
+## over the gear is what the reel paid out minus what stayed between you and the gear.
+func _turn_gears() -> void:
+	var total := length()
+	var seen := {}
 	for n in get_tree().get_nodes_in_group("gears"):
 		var g := n as Gear
 		var c := g.global_position
-		for i in points.size() - 1:
-			var a := points[i]
-			var b := points[i + 1]
-			if absf((a.y + b.y) / 2.0 - c.y) > 2.0:
+		var la := 0.0
+		for i in range(1, points.size() - 1):
+			la += points[i - 1].distance_to(points[i])
+			var pv := points[i]
+			var off := Vector3(pv.x - c.x, 0, pv.z - c.z)
+			if off.length() > g.radius + OFF + 0.3 or absf(pv.y - (c.y + 0.6)) > 1.2:
 				continue
-			var ab := Vector3(b.x - a.x, 0, b.z - a.z)
-			if ab.length() < 0.001:
-				continue
-			var k := clampf(Vector3(c.x - a.x, 0, c.z - a.z).dot(ab) / ab.length_squared(), 0.0, 1.0)
-			var near := Vector3(a.x, 0, a.z) + ab * k
-			var off := Vector3(near.x - c.x, 0, near.z - c.z)
-			if off.length() > g.radius + 0.7 or k <= 0.0 or k >= 1.0:
-				continue
-			# rope moving toward the walker along ab, on side off of the centre: + is counter-clockwise from above
-			var side := signf(off.cross(ab).y)
-			g.turn(slide * side)
+			var st: Array = _gear_len.get(g, [])
+			if not st.is_empty() and (st[0] as Vector3).distance_to(pv) < 0.3:
+				var slid := (total - float(st[2])) - (la - float(st[1]))
+				var travel := points[i + 1] - pv
+				g.turn(slid * signf(off.cross(Vector3(travel.x, 0, travel.z)).y))
+			_gear_len[g] = [pv, la, total]
+			seen[g] = true
 			break
+	for g in _gear_len.keys():
+		if not seen.has(g):
+			_gear_len.erase(g)
 
 func _draw() -> void:
 	_mesh.clear_surfaces()
 	_mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
 	for p in points:
-		_mesh.surface_add_vertex(p + Vector3.UP * 0.1)
+		_mesh.surface_add_vertex(p)
 	_mesh.surface_end()

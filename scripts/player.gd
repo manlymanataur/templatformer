@@ -28,6 +28,7 @@ var ai_target := false
 var ai_attack := false
 var ai_attack_held := false
 var ai_item := -1
+var ai_context := false ## presses the context button for one frame
 var _ai_jump_prev := false
 
 var coyote := 0.0
@@ -104,7 +105,7 @@ func _ready() -> void:
 	floor_stop_on_slope = false
 	floor_block_on_wall = false
 	max_slides = 6
-	collision_mask = 1 | 1 << 1 | 1 << 2 # the world, bars and railings, and grates (until you shrink)
+	collision_mask = 1 | 1 << 1 | 1 << 2 | 1 << 4 # the world, bars and railings, grates (until you shrink), props (seed cubes, the spider)
 	_col = CollisionShape3D.new()
 	var sphere := SphereShape3D.new()
 	sphere.radius = RADIUS
@@ -236,7 +237,7 @@ func set_small(on: bool, force := false) -> bool:
 	small = on
 	(_col.shape as SphereShape3D).radius = r_new
 	global_position = at
-	collision_mask = 1 if small else 1 | 1 << 1 | 1 << 2 # small, grates, fences and bars don't stop you
+	collision_mask = (1 if small else 1 | 1 << 1 | 1 << 2) | 1 << 4 # small, grates, fences and bars don't stop you; props (seed cubes, the spider) always do
 	magnet_flying = false
 	inventory.changed.emit()
 	return true
@@ -317,23 +318,18 @@ func focus() -> Node3D:
 func hands_full() -> bool:
 	return held_seed != null or carrying != null
 
-## The spider item: send it out and steer it; let go of it; take it back or steer it again.
+## The spider item: the first press sends it out and you steer it; every press after swaps between steering
+## it and steering yourself. (Pick it back up with the context button next to it.)
 func use_spider() -> void:
 	if pilot != null:
 		pilot.let_go()
 		pilot = null
 		return
 	if spider == null or not is_instance_valid(spider):
-		if not is_on_floor():
+		if not is_on_floor() or hands_full():
 			return
 		spider = Spider.deploy(self)
-	elif spider.global_position.distance_to(global_position) < 2.5:
-		stow_spider()
-		return
-	if leash != null:
-		leash.queue_free()
-		leash = null
-	velocity = Vector3.ZERO
+	velocity = Vector3(0, velocity.y, 0)
 	pilot = spider
 	spider.take_control()
 
@@ -358,7 +354,7 @@ func use_lash() -> void:
 		return
 	if hands_full() or pilot != null:
 		return
-	var from := global_position + Vector3.UP * 0.3
+	var from := global_position + Vector3.UP * 0.1
 	var dir := _flat_facing()
 	if target != null and is_instance_valid(target):
 		dir = (target.global_position - from).normalized()
@@ -371,7 +367,7 @@ func use_lash() -> void:
 		return
 	var c: Node = hit["collider"]
 	if c is Spider:
-		leash = Tether.make(get_parent(), c, self, t.leash_length, true, Color(0.85, 0.7, 0.4))
+		leash = Tether.make(get_parent(), self, c, t.leash_length, Color(0.85, 0.7, 0.4))
 	elif c is Seed and (c as Seed).loose():
 		held_seed = c
 		held_seed.hold(self)
@@ -396,33 +392,77 @@ func _show_flick(a: Vector3, b: Vector3) -> void:
 	_flick_t = 0.18
 	_flick.visible = true
 
-## Attack with a seed in your hands: plant it on soil, mud or roots; otherwise throw it or set it down.
+## Context button with a seed in your hands: set down in front of you on soil, mud or roots, it plants;
+## otherwise you throw it (moving) or set it down (standing still).
 func release_seed() -> void:
 	var sd := held_seed
-	held_seed = null
 	var f := _flat_facing()
-	sd.set_down(global_position + f * 0.9 + Vector3.DOWN * (radius() - Seed.RADIUS - 0.05))
-	if sd.can_plant():
-		sd.plant()
-		return
+	var front := global_position + f * (radius() + Seed.HALF + 0.1) + Vector3.UP * (Seed.HALF - radius() + 0.05)
 	var moving := _wish().length() > 0.2 or flat_speed() > 2.0
+	var room := _room_for_cube(front)
+	if not moving and not room:
+		return # no room in front: keep holding it
+	held_seed = null
+	if room:
+		sd.set_down(front)
+		if sd.can_plant():
+			sd.plant()
+			return
 	if moving:
-		sd.set_down(global_position + Vector3.UP * (radius() + 0.6))
+		sd.set_down(global_position + Vector3.UP * (radius() + Seed.HALF + 0.1))
 		sd.throw(f * t.bomb_throw_speed + Vector3.UP * t.bomb_throw_up + Vector3(velocity.x, 0, velocity.z) * 0.3)
 
-## Attack with empty hands next to a seed picks it up, and next to a trunk pulls it up.
-## Returns true if attack was used that way.
+func _room_for_cube(at: Vector3) -> bool:
+	var q := PhysicsShapeQueryParameters3D.new()
+	var b := BoxShape3D.new()
+	b.size = Vector3.ONE * (Seed.SIZE - 0.1)
+	q.shape = b
+	q.transform = Transform3D(Basis(), at + Vector3.UP * 0.05)
+	q.collision_mask = 1 | 1 << 1 | 1 << 2 | 1 << 4
+	q.exclude = [get_rid()] + ([held_seed.get_rid()] if held_seed != null else [])
+	return get_world_3d().direct_space_state.intersect_shape(q, 1).is_empty()
+
+## Context button with empty hands next to a seed picks it up, and next to a planted one pulls it up.
+## Returns true if it was used that way.
 func _grab_seed() -> bool:
 	for n in get_tree().get_nodes_in_group("seeds"):
 		var sd := n as Seed
 		var d := sd.global_position - global_position
-		if sd.loose() and d.length() < radius() + 1.0:
+		if (sd.loose() or sd.planted) and _next_to_cube(d):
+			if sd.planted:
+				sd.uproot(self)
+			else:
+				sd.hold(self)
 			held_seed = sd
-			sd.hold(self)
 			return true
-		if sd.planted and Vector2(d.x, d.z).length() < radius() + Seed.TRUNK_R + 0.6 and absf(d.y) < 1.5:
-			sd.uproot(self)
-			held_seed = sd
+	return false
+
+## d is from you to a cube's centre: are you touching one of its sides?
+func _next_to_cube(d: Vector3) -> bool:
+	return maxf(absf(d.x), absf(d.z)) < Seed.HALF + radius() + 0.4 and absf(d.y) < Seed.HALF + 0.3
+
+## The context button: whatever makes sense where you are. Holding something, you put it down (a seed
+## plants on soil, mud or roots). Otherwise you pick up a seed or the spider, or pull a bomb off a plant.
+func context() -> void:
+	if held_seed != null:
+		release_seed()
+	elif carrying != null:
+		release_bomb()
+	elif pilot != null:
+		return
+	elif _grab_seed():
+		pass
+	elif _pick_bomb():
+		pass
+	elif spider != null and is_instance_valid(spider) and spider.global_position.distance_to(global_position) < radius() + Spider.RADIUS + 0.8:
+		stow_spider()
+
+func _pick_bomb() -> bool:
+	for n in get_tree().get_nodes_in_group("bomb_flowers"):
+		var fl := n as BombFlower
+		if fl.ripe() and fl.global_position.distance_to(global_position) < radius() + 1.3:
+			fl.pick()
+			pull_bomb()
 			return true
 	return false
 
@@ -480,6 +520,7 @@ func _physics_process(dt: float) -> void:
 	var attack_pressed: bool
 	var attack_held: bool
 	var item_pressed := -1
+	var context_pressed := false
 	if ai:
 		jump_pressed = ai_jump and not _ai_jump_prev
 		jump_held = ai_jump
@@ -488,14 +529,17 @@ func _physics_process(dt: float) -> void:
 		attack_pressed = ai_attack
 		attack_held = ai_attack or ai_attack_held
 		item_pressed = ai_item
+		context_pressed = ai_context
 		ai_attack = false
 		ai_item = -1
+		ai_context = false
 	else:
 		jump_pressed = Input.is_action_just_pressed("jump")
 		jump_held = Input.is_action_pressed("jump")
 		target_held = Input.is_action_pressed("target")
 		attack_pressed = Input.is_action_just_pressed("attack")
 		attack_held = Input.is_action_pressed("attack")
+		context_pressed = Input.is_action_just_pressed("context")
 		for i in Inventory.SLOTS:
 			if Input.is_action_just_pressed("item_%d" % (i + 1)):
 				item_pressed = i
@@ -517,6 +561,8 @@ func _physics_process(dt: float) -> void:
 		attack_pressed = false
 		attack_held = false
 		target_held = false
+	if leash != null and is_instance_valid(leash):
+		leash.lead = pilot if pilot != null else self # whoever you steer drags the other at full length
 	invuln = maxf(invuln - dt, 0.0)
 	wall_lock = maxf(wall_lock - dt, 0.0)
 	air_lock = maxf(air_lock - dt, 0.0)
@@ -524,12 +570,11 @@ func _physics_process(dt: float) -> void:
 	# items and attacks
 	if item_pressed >= 0:
 		inventory.use(item_pressed, self)
+	if context_pressed:
+		context()
 	if carrying != null and attack_pressed:
 		release_bomb()
 	elif held_seed != null:
-		if attack_pressed:
-			release_seed()
-	elif attack_pressed and _grab_seed():
 		pass
 	elif inventory.has("spear") and carrying == null:
 		if attack_pressed and not is_on_floor() and _start_homing():
@@ -605,12 +650,8 @@ func _physics_process(dt: float) -> void:
 		_teleported -= 1
 		if _teleported == 0:
 			platform_on_leave = CharacterBody3D.PLATFORM_ON_LEAVE_ADD_VELOCITY
-	if leash != null:
-		if is_instance_valid(leash.anchor):
-			leash.update()
-		else:
-			leash.queue_free()
-			leash = null
+	if leash != null and not is_instance_valid(leash):
+		leash = null
 	if water != null:
 		if small and global_position.y < water.surface() and velocity.y <= 0.0:
 			global_position.y = water.surface() # bob at the surface
@@ -983,7 +1024,7 @@ func _climb_step(wish: Vector3, jump_pressed: bool) -> bool:
 func _grab_ledge(wn: Vector3) -> bool:
 	var space := get_world_3d().direct_space_state
 	var over := global_position - wn * (radius() + 0.35)
-	var q := PhysicsRayQueryParameters3D.create(over + Vector3.UP * t.ledge_reach, over + Vector3.UP * 0.1, 1, [get_rid()])
+	var q := PhysicsRayQueryParameters3D.create(over + Vector3.UP * t.ledge_reach, over + Vector3.UP * 0.1, 1 | 1 << 4, [get_rid()]) # walls and seed cubes
 	var hit := space.intersect_ray(q)
 	if hit.is_empty() or (hit["normal"] as Vector3).y < 0.7 or hit["collider"] is IronCube:
 		return false # iron is too smooth to grip: its 4.5 m still needs a triple jump

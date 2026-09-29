@@ -46,13 +46,14 @@ extends Resource
 @export var iron_speed := 6.0 ## how fast iron slides from cell to cell
 @export var lash_range := 16.0 ## how far the lash reaches
 @export var lash_pull_speed := 22.0 ## how fast the lash pulls you to a post or trunk
-@export var leash_length := 16.0 ## lash hooked on the spider: rope you can pay out before you tow it
-@export var spider_cable := 14.0 ## piloting the spider: cable it can pay out from you
+@export var leash_length := 16.0 ## lash hooked on the spider: the taut rope's length; at full length the one you steer drags the other
 @export var spider_speed := 7.0
 @export var gear_ratio := 0.5 ## metres a gear's lift moves per metre of rope sliding past it
 @export var trunk_height := 8.0 ## a planted seed's trunk grows up to this, or to the ceiling
 @export var root_length := 18.0 ## roots grow sideways until blocked, up to this
 @export var spear_drop := 3.0 ## a seed falling at least this far onto mud spears in and plants itself
+@export var bomb_regrow := 4.0 ## seconds for a bomb plant to grow a new bomb
+@export var spider_break := 30.0 ## an unhooked spider further than this from you breaks and goes back in your pack
 @export var ledge_reach := 1.2 ## a ledge top this far above your middle, as you fall against it, is caught
 @export var climb_speed := 5.0 ## up a trunk
 @export var hitstop := 0.06 ## real seconds the game freezes on a solid hit
@@ -72,4 +73,4 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", 
 	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
 	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "spin_charge_time", "bomb_throw_speed",
-	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_cable", "spider_speed", "gear_ratio", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "hitstop", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "cam_distance", "cam_lag", "cam_recenter_delay"]
+	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "hitstop", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "cam_distance", "cam_lag", "cam_recenter_delay"]
