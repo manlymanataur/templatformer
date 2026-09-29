@@ -72,9 +72,7 @@ static func apply(p: Player, d: Dictionary, rig: CameraRig = null) -> bool:
 	p.set_small(bool(d.get("small", false)), true)
 	p.hp = clampi(int(d.get("hp", p.max_hp)), 1, p.max_hp)
 	var pos: Array = d["pos"]
-	p.global_position = Vector3(float(pos[0]), float(pos[1]), float(pos[2]))
-	p.velocity = Vector3.ZERO
-	p.up_direction = Vector3.UP
+	p.teleport(Vector3(float(pos[0]), float(pos[1]), float(pos[2])))
 	p.target = null
 	p.roll_t = 0.0
 	var face: Array = d.get("face", [0.0, -1.0])

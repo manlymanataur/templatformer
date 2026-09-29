@@ -53,7 +53,16 @@ extends Resource
 @export var trunk_height := 8.0 ## a planted seed's trunk grows up to this, or to the ceiling
 @export var root_length := 18.0 ## roots grow sideways until blocked, up to this
 @export var spear_drop := 3.0 ## a seed falling at least this far onto mud spears in and plants itself
+@export var ledge_reach := 1.2 ## a ledge top this far above your middle, as you fall against it, is caught
 @export var climb_speed := 5.0 ## up a trunk
+@export var hitstop := 0.06 ## real seconds the game freezes on a solid hit
+@export var shake_hit := 0.15 ## camera shake on a hit (metres)
+@export var dodge_slow_time := 1.5 ## a perfect dodge (hit during a roll's i-frames) slows the world this long
+@export var dodge_slow_speed := 0.3 ## how fast monsters move during that slow-motion
+@export var homing_range := 14.0 ## air attack homes in on something hittable this close in front of you
+@export var homing_speed := 26.0
+@export var pogo_speed := 13.0 ## bounce up off whatever the homing attack hits
+@export var rail_min_speed := 10.0 ## you grind at least this fast
 @export var boost_pad_speed := 30.0
 @export var cam_distance := 7.0
 @export var cam_lag := 10.0
@@ -63,4 +72,4 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", 
 	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
 	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "spin_charge_time", "bomb_throw_speed",
-	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_cable", "spider_speed", "gear_ratio", "trunk_height", "root_length", "spear_drop", "climb_speed", "boost_pad_speed", "cam_distance", "cam_lag", "cam_recenter_delay"]
+	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_cable", "spider_speed", "gear_ratio", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "hitstop", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "cam_distance", "cam_lag", "cam_recenter_delay"]

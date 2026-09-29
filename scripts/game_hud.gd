@@ -8,6 +8,7 @@ var slot_panels: Array[Label] = []
 var pause_panel: PanelContainer
 var pause_list: Label
 var sel := 0
+var tint: ColorRect ## blue wash while a perfect dodge slows the world
 
 class Hearts extends Control:
 	var player: Player
@@ -35,6 +36,11 @@ class Hearts extends Control:
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	tint = ColorRect.new()
+	tint.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tint.color = Color(0.3, 0.5, 1.0, 0.0)
+	add_child(tint)
 	hearts = Hearts.new()
 	hearts.player = player
 	hearts.position = Vector2(14, 12)
@@ -126,3 +132,6 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.is_action_pressed("item_%d" % (i + 1)) and sel < items.size():
 				player.inventory.assign(i, items[sel])
 	_refresh()
+
+func _process(_dt: float) -> void:
+	tint.color.a = 0.18 if Hitfx.slow_left > 0.0 else 0.0

@@ -1,7 +1,8 @@
 class_name Gear
 extends StaticBody3D
 ## A big gear on a vertical axle, from Winch. Rope sliding past its rim turns it like a belt (see Tether),
-## and the gear drives a lift: a gate or platform that moves along `travel` as the gear winds.
+## and so does the spider walking along it: its legs catch the teeth.
+## The gear drives a lift: a gate or platform that moves along `travel` as the gear winds.
 ## It keeps its angle when the rope goes slack or is dropped, so you can wind it over several trips.
 ## Wound backwards past the start, or forwards past the end of the lift's travel, it just slips.
 
@@ -58,6 +59,26 @@ func _ready() -> void:
 		tooth.position = Vector3(cos(a) * (radius - 0.05), 0.6, sin(a) * (radius - 0.05))
 		tooth.rotation.y = -a
 		_teeth.add_child(tooth)
+
+var _last := {} ## spider -> where it was last frame
+
+func _physics_process(_dt: float) -> void:
+	# a spider walking along the rim turns the gear by how far it walked, like rope sliding past
+	var seen := {}
+	for n in get_tree().get_nodes_in_group("spiders"):
+		var sp := n as Node3D
+		var at := sp.global_position
+		seen[sp] = true
+		if _last.has(sp):
+			var d: Vector3 = at - _last[sp]
+			d.y = 0.0
+			var off := Vector3(at.x - global_position.x, 0, at.z - global_position.z)
+			if d.length() > 0.0001 and off.length() < radius + 0.9 and absf(at.y - global_position.y - 0.6) < 1.5:
+				turn(d.length() * signf(off.cross(d).y))
+		_last[sp] = at
+	for k in _last.keys():
+		if not seen.has(k):
+			_last.erase(k)
 
 func max_wind() -> float:
 	return travel.length() / maxf(t.gear_ratio, 0.01)

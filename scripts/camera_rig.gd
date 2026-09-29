@@ -11,8 +11,10 @@ var idle := 0.0
 var zoom := 1.0
 var arm: SpringArm3D
 var cam: Camera3D
+var shake := 0.0 ## metres of random jitter, decaying (see Hitfx.shake)
 
 func _ready() -> void:
+	add_to_group("camera_rig")
 	arm = SpringArm3D.new()
 	var s := SphereShape3D.new()
 	s.radius = 0.3
@@ -58,3 +60,6 @@ func _physics_process(dt: float) -> void:
 	rotation = Vector3(pitch, yaw, 0)
 	arm.spring_length = t.cam_distance * zoom
 	player.cam_basis = Basis(Vector3.UP, yaw)
+	shake = maxf(shake - dt * 0.8, 0.0)
+	cam.h_offset = randf_range(-1.0, 1.0) * shake
+	cam.v_offset = randf_range(-1.0, 1.0) * shake

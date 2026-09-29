@@ -77,7 +77,18 @@ var leash: Tether = null ## the lash hooked on the spider
 var held_seed: Seed = null
 var grapple_to := Vector3.ZERO ## the lash is pulling you here
 var grapple_t := 0.0
-var climbing: Seed = null ## the trunk you're climbing
+var climbing: Node3D = null ## the climbable wall or trunk you're on
+var homing: Node3D = null ## the air attack is flying you at this
+var homing_t := 0.0
+var hang := Vector3.ZERO ## hanging from a ledge: the ledge's top edge point (ZERO when not hanging)
+var hang_n := Vector3.ZERO ## the ledge wall's normal
+var rail: Rail = null ## grinding this rail
+var rail_s := 0.0 ## distance along it
+var rail_dir := 1.0
+var rail_speed := 0.0
+var _rail_cool := 0.0
+var _teleported := 0 ## frames until moving floors pass their motion on again
+var _pogo_last: Node3D = null ## what you last bounced off; homing skips it until you land
 var _flick: MeshInstance3D
 var _flick_t := 0.0
 var small := false ## shrunk on a shrink pad
@@ -259,9 +270,17 @@ func light_reach() -> float:
 func dodging() -> bool:
 	return roll_t > 0.0 and (t.roll_time - roll_t) < t.roll_invuln
 
-func respawn() -> void:
-	global_position = spawn
+## Move straight to pos, standing still. Whatever you stood on doesn't pass its motion on (a monster that was
+## just placed looks to the physics like it moved 50 m in a frame, and you'd be flung with it).
+func teleport(pos: Vector3) -> void:
+	global_position = pos
 	velocity = Vector3.ZERO
+	up_direction = Vector3.UP
+	platform_on_leave = CharacterBody3D.PLATFORM_ON_LEAVE_DO_NOTHING
+	_teleported = 2
+
+func respawn() -> void:
+	teleport(spawn)
 	up_direction = Vector3.UP
 	target = null
 	hp = max_hp
@@ -287,6 +306,9 @@ func drop_holds() -> void:
 		pilot = null
 	grapple_t = 0.0
 	climbing = null
+	homing = null
+	hang = Vector3.ZERO
+	rail = null
 
 ## Where the camera looks: the spider while you steer it, otherwise you.
 func focus() -> Node3D:
@@ -405,7 +427,10 @@ func _grab_seed() -> bool:
 	return false
 
 func hurt(amount: int, from: Vector3) -> void:
-	if god or invuln > 0.0 or hp <= 0 or dodging():
+	if dodging() and hp > 0:
+		Hitfx.slow(get_tree(), t) # a perfect dodge: the world slows down while you don't
+		return
+	if god or invuln > 0.0 or hp <= 0:
 		return
 	hp -= amount
 	invuln = INVULN_TIME
@@ -478,6 +503,10 @@ func _physics_process(dt: float) -> void:
 			respawn()
 	_flick_t -= dt
 	_flick.visible = _flick_t > 0.0
+	Hitfx.tick(dt, t)
+	_rail_cool = maxf(_rail_cool - dt, 0.0)
+	if is_on_floor():
+		_pogo_last = null
 	if pilot != null and not is_instance_valid(pilot):
 		pilot = null
 	if pilot != null:
@@ -503,7 +532,9 @@ func _physics_process(dt: float) -> void:
 	elif attack_pressed and _grab_seed():
 		pass
 	elif inventory.has("spear") and carrying == null:
-		if attack_pressed:
+		if attack_pressed and not is_on_floor() and _start_homing():
+			pass
+		elif attack_pressed:
 			spear.press()
 		# hold attack to charge a spin; release to let it go
 		if attack_held:
@@ -542,8 +573,14 @@ func _physics_process(dt: float) -> void:
 	var water := _water()
 	var fly := _magnet_line() if small and inventory.has("magnet") else Vector3.ZERO
 	magnet_flying = fly != Vector3.ZERO
-	if grapple_t > 0.0:
+	if homing != null:
+		_homing_step(dt)
+	elif rail != null or _catch_rail():
+		_rail_step(dt, jump_pressed)
+	elif grapple_t > 0.0:
 		_grapple_step(dt)
+	elif hang != Vector3.ZERO:
+		_hang_step(wish, jump_pressed)
 	elif _climb_step(wish, jump_pressed):
 		pass
 	elif magnet_flying:
@@ -564,6 +601,10 @@ func _physics_process(dt: float) -> void:
 	floor_snap_length = 0.1 if on_floor and velocity.y > 3.0 else 0.7
 	move_and_slide()
 	_touch_after_move()
+	if _teleported > 0:
+		_teleported -= 1
+		if _teleported == 0:
+			platform_on_leave = CharacterBody3D.PLATFORM_ON_LEAVE_ADD_VELOCITY
 	if leash != null:
 		if is_instance_valid(leash.anchor):
 			leash.update()
@@ -656,6 +697,8 @@ func _air_step(dt: float, wish: Vector3, jump_held: bool) -> void:
 		wn.y = 0
 		wall = wn.length() > 0.7
 		wn = wn.normalized()
+	if wall and velocity.y < 0.0 and wish.dot(-wn) > 0.3 and carrying == null and held_seed == null and _grab_ledge(wn):
+		return
 	if wall and buffer > 0.0:
 		_wall_jump(wn)
 	elif buffer > 0.0 and coyote > 0.0:
@@ -899,31 +942,171 @@ func _grapple_step(dt: float) -> void:
 	velocity = d.normalized() * t.lash_pull_speed
 	facing = Vector3(d.x, 0, d.z).normalized() if Vector2(d.x, d.z).length() > 0.1 else facing
 
-## Push into a trunk to climb it; at the top you pull yourself up onto it. Jump kicks you off.
+## Push into anything climbable (vine walls, trunks) to climb it, as long as you like. The stick into the
+## wall climbs, sideways moves along it; let go and you drop. At the top you pull yourself over. Jump kicks off.
 ## Returns true while climbing.
 func _climb_step(wish: Vector3, jump_pressed: bool) -> bool:
 	climbing = null
-	if hands_full() or small:
+	if hands_full() or small or wish.length() < 0.3:
 		return false
-	for n in get_tree().get_nodes_in_group("trunks"):
-		var sd: Seed = (n as Node).get_meta("seed")
-		var c := (n as Node3D).global_position
-		var to := Vector3(c.x - global_position.x, 0, c.z - global_position.z)
-		if to.length() > radius() + Seed.TRUNK_R + 0.25 or wish.dot(to.normalized()) < 0.4:
-			continue
-		var top := sd.trunk_top()
-		if global_position.y > top + 0.2 or global_position.y < sd.global_position.y - 1.0:
-			continue
-		climbing = sd
-		facing = to.normalized()
-		if jump_pressed:
-			velocity = -to.normalized() * t.wall_jump_speed + Vector3.UP * t.wall_jump_up
-			wall_lock = 0.2
-			climbing = null
-			return true
-		if global_position.y >= top - 0.3:
-			velocity = to.normalized() * 3.0 + Vector3.UP * 6.0 # over the top
-		else:
-			velocity = Vector3.UP * t.climb_speed + to.normalized() * 1.0
+	var space := get_world_3d().direct_space_state
+	var dir := Vector3(wish.x, 0, wish.z).normalized()
+	var q := PhysicsRayQueryParameters3D.create(global_position, global_position + dir * (radius() + 0.45), 1, [get_rid()])
+	var hit := space.intersect_ray(q)
+	if hit.is_empty() or not (hit["collider"] as Node).is_in_group("climbable"):
+		return false
+	var n: Vector3 = hit["normal"]
+	n.y = 0.0
+	if n.length() < 0.5:
+		return false
+	n = n.normalized()
+	var into := wish.dot(-n)
+	if into < 0.3:
+		return false
+	climbing = hit["collider"]
+	facing = -n
+	if jump_pressed:
+		velocity = n * t.wall_jump_speed + Vector3.UP * t.wall_jump_up
+		wall_lock = 0.2
+		climbing = null
 		return true
+	# at the top: nothing climbable in front of your head any more, so pull up and over
+	var head := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.9, global_position + Vector3.UP * 0.9 - n * (radius() + 0.6), 1, [get_rid()])
+	if space.intersect_ray(head).is_empty():
+		velocity = -n * 3.0 + Vector3.UP * 7.0
+		return true
+	var side := wish - (-n) * into
+	velocity = Vector3.UP * t.climb_speed * into + side * t.climb_speed - n * 1.0
+	return true
+
+## Falling against a wall whose top is within ledge_reach above your middle: catch the edge and hang there.
+func _grab_ledge(wn: Vector3) -> bool:
+	var space := get_world_3d().direct_space_state
+	var over := global_position - wn * (radius() + 0.35)
+	var q := PhysicsRayQueryParameters3D.create(over + Vector3.UP * t.ledge_reach, over + Vector3.UP * 0.1, 1, [get_rid()])
+	var hit := space.intersect_ray(q)
+	if hit.is_empty() or (hit["normal"] as Vector3).y < 0.7 or hit["collider"] is IronCube:
+		return false # iron is too smooth to grip: its 4.5 m still needs a triple jump
+	var top: Vector3 = hit["position"]
+	# room to stand up there
+	var room := PhysicsRayQueryParameters3D.create(top + Vector3.UP * 0.1, top + Vector3.UP * 1.1, 1, [get_rid()])
+	if not space.intersect_ray(room).is_empty():
+		return false
+	hang = top
+	hang_n = wn
+	velocity = Vector3.ZERO
+	global_position = Vector3(global_position.x, top.y - 0.55, global_position.z)
+	facing = -wn
+	jump_chain = 0
+	return true
+
+## Hanging from a ledge: push toward it or jump to pull yourself up; pull away to drop.
+func _hang_step(wish: Vector3, jump_pressed: bool) -> void:
+	velocity = Vector3.ZERO
+	global_position.y = hang.y - 0.55
+	var into := wish.dot(-hang_n)
+	if jump_pressed or into > 0.5:
+		velocity = -hang_n * 3.5 + Vector3.UP * 8.0
+		hang = Vector3.ZERO
+		air_lock = 0.1
+	elif into < -0.5:
+		velocity = hang_n * 2.0
+		hang = Vector3.ZERO
+
+## Air attack: home in on the nearest thing to hit ahead of you (what you're locked on to comes first).
+## Returns false if there's nothing in reach, and the spear does an air slash instead.
+func _start_homing() -> bool:
+	var best: Node3D = null
+	var best_d := t.homing_range
+	var f := _flat_facing()
+	var cands: Array = []
+	if target != null and is_instance_valid(target) and (target.is_in_group("hurtable") or target.is_in_group("pogo")):
+		cands = [target]
+	else:
+		cands = get_tree().get_nodes_in_group("hurtable") + get_tree().get_nodes_in_group("pogo")
+	for n in cands:
+		var node := n as Node3D
+		if node == self or node is Player or node is CrackedWall or node == _pogo_last:
+			continue
+		var d := node.global_position - global_position
+		var ahead := Vector2(d.x, d.z).length() < 1.5 or Vector3(d.x, 0, d.z).normalized().dot(f) >= 0.3 # right overhead counts
+		if d.length() > best_d or (target != node and not ahead):
+			continue
+		var q := PhysicsRayQueryParameters3D.create(global_position, node.global_position, 1, [get_rid()])
+		var hit := get_world_3d().direct_space_state.intersect_ray(q)
+		if not hit.is_empty() and hit["collider"] != node:
+			continue
+		best = node
+		best_d = d.length()
+	if best == null:
+		return false
+	homing = best
+	homing_t = best_d / t.homing_speed + 0.25
+	spear.start("air")
+	return true
+
+## Flying at the homing target. Reaching it hits it (enemies take damage, spikes don't hurt you) and
+## pogos you back up into the air, ready to home in on the next one.
+func _homing_step(dt: float) -> void:
+	homing_t -= dt
+	if not is_instance_valid(homing) or homing_t <= 0.0:
+		homing = null
+		return
+	var d := homing.global_position - global_position
+	if d.length() < radius() + 0.9:
+		if homing.is_in_group("hurtable") and not spear._hit.has(homing): # the air slash may have hit it already
+			spear._hit.append(homing)
+			homing.hurt(2, global_position)
+		Hitfx.hit(get_tree(), homing.global_position, t, 1.2)
+		# you strike it and come off its top, even if you flew in from below
+		var over := homing.global_position + Vector3.UP * (radius() + 0.8)
+		var q := PhysicsRayQueryParameters3D.create(homing.global_position, over + Vector3.UP * radius(), 1, [get_rid(), homing.get_rid()] if homing is CollisionObject3D else [get_rid()])
+		if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+			global_position = over
+		velocity = Vector3.UP * t.pogo_speed # straight up: steer with air control to the next one
+		_pogo_last = homing # not the same one again until you land
+		jumping = false
+		jump_chain = 0
+		air_lock = 0.1
+		homing = null
+		return
+	velocity = d.normalized() * t.homing_speed
+	facing = Vector3(d.x, 0, d.z).normalized() if Vector2(d.x, d.z).length() > 0.1 else facing
+
+## Landing on or near a rail from above starts a grind.
+func _catch_rail() -> bool:
+	if _rail_cool > 0.0 or velocity.y > 3.0:
+		return false
+	for n in get_tree().get_nodes_in_group("rails"):
+		var r := n as Rail
+		var s := r.closest(global_position)
+		var at := r.point(s)
+		var d := global_position - at
+		if Vector2(d.x, d.z).length() < 0.7 and d.y > -0.2 and d.y < radius() + 0.9:
+			var tan := r.tangent(s)
+			rail = r
+			rail_s = s
+			var along := velocity.dot(tan)
+			rail_dir = 1.0 if along >= 0.0 else -1.0
+			if absf(along) < 0.5: # dropped straight on: go downhill
+				rail_dir = -1.0 if tan.y > 0.0 else 1.0
+			rail_speed = maxf(absf(along), t.rail_min_speed)
+			return true
 	return false
+
+## Grinding: you ride the rail, gaining speed downhill and losing it uphill. Jump hops off; at the end
+## you fly off with your speed.
+func _rail_step(dt: float, jump_pressed: bool) -> void:
+	var tan := rail.tangent(rail_s) * rail_dir
+	rail_speed = clampf(rail_speed - t.gravity * tan.y * t.slope_factor * dt, 3.0, t.boost_speed)
+	rail_s += rail_speed * rail_dir * dt
+	velocity = tan * rail_speed
+	if jump_pressed or rail_s <= 0.0 or rail_s >= rail.length:
+		if jump_pressed:
+			velocity.y = maxf(velocity.y, 0.0) + t.jump_speed
+		rail = null
+		_rail_cool = 0.3
+		air_lock = 0.1
+		return
+	global_position = rail.point(rail_s) + Vector3.UP * (radius() + 0.1) - velocity * dt # move_and_slide adds this frame's step
+	facing = Vector3(tan.x, 0, tan.z).normalized() if Vector2(tan.x, tan.z).length() > 0.1 else facing

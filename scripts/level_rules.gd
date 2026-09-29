@@ -23,6 +23,7 @@ const AREAS := {
 	"Lodestone": AABB(Vector3(50, -4, -36), Vector3(30, 20, 40)),
 	"Scale": AABB(Vector3(-100, -8, 36), Vector3(46, 24, 76)),
 	"Rootworks": AABB(Vector3(34, -4, 53), Vector3(52, 24, 61)), # the ramp foot is left out: it runs by the arena
+	"Moves yard": AABB(Vector3(-26, -4, -120), Vector3(52, 16, 56)),
 }
 
 class Grid:
