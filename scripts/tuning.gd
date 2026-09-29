@@ -4,6 +4,7 @@ extends Resource
 
 @export var top_speed := 12.0 ## running speed you reach by holding a direction
 @export var boost_speed := 32.0 ## hard cap; slopes and boost pads can take you past top_speed up to this
+@export var overspeed_decay := 6.0 ## on flat ground, speed above top_speed bleeds off this fast (m/s per s); downhill you still build speed
 @export var accel := 22.0
 @export var friction := 18.0 ## slow-down with no input
 @export var brake := 45.0 ## slow-down when pushing against your motion
@@ -48,7 +49,7 @@ extends Resource
 @export var cam_lag := 10.0
 @export var cam_recenter_delay := 0.8
 
-const EDITABLE: Array[String] = ["top_speed", "boost_speed", "accel", "friction", "brake", "turn_rate", "turn_rate_fast",
+const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", "accel", "friction", "brake", "turn_rate", "turn_rate_fast",
 	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
 	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "spin_charge_time", "bomb_throw_speed",

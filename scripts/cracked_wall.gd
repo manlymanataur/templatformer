@@ -1,6 +1,6 @@
 class_name CrackedWall
 extends StaticBody3D
-## A cracked wall. Roll into it at normal size and it bursts. Small, you just bounce off.
+## A cracked wall. Roll into it at normal size, or blow it up with a bomb, and it bursts. Small, you just bounce off.
 
 var size := Vector3(2, 3, 0.5)
 var smashed := false
@@ -14,6 +14,7 @@ static func make(parent: Node, pos: Vector3, wall: Vector3) -> CrackedWall:
 	return w
 
 func _ready() -> void:
+	add_to_group("hurtable") # bombs
 	var c := CollisionShape3D.new()
 	var s := BoxShape3D.new()
 	s.size = size
@@ -42,6 +43,10 @@ func _ready() -> void:
 			line.position = Vector3(along, (k % 2 - 0.5) * 0.6, off) if long else Vector3(off, (k % 2 - 0.5) * 0.6, along)
 			line.rotation = Vector3(0, 0, 0.5 - k * 0.35) if long else Vector3(0.5 - k * 0.35, 0, 0)
 			add_child(line)
+
+## Bombs call this (see Bomb.explode).
+func hurt(_amount: int, _from: Vector3) -> void:
+	smash()
 
 func smash() -> void:
 	if smashed:

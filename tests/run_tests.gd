@@ -427,15 +427,23 @@ func _move_tests(arena: Vector3) -> void:
 	p.ai_move = Vector2.ZERO
 	check("wall slide caps fall speed", fastest <= t.wall_slide_speed + 0.5, "fastest fall %.1f m/s" % fastest)
 
-	# 25. Roll (a quick tap of the stick, there's no roll button): covers ground fast and dodges a hit early on
+	# 25. Roll (holding target, a quick forward tap; there's no roll button): covers ground fast and dodges a hit early on
 	await _fresh_player(arena)
+	await _tap(Vector3.FORWARD)
+	await frames(10)
+	var rolled_free := p.roll_t > 0.0
+	await _fresh_player(arena)
+	p.ai_target = true
+	await frames(3)
 	var x0 := p.global_position
 	await _tap(Vector3.FORWARD)
-	check("a quick tap rolls", p.roll_t > 0.0 and p.roll_kind == "roll", "rolling %s" % (p.roll_t > 0.0))
+	check("without target a tap just steps; holding target it rolls", not rolled_free and p.roll_t > 0.0 and p.roll_kind == "roll",
+		"rolled without target %s, rolling with %s" % [rolled_free, p.roll_t > 0.0])
 	p.hurt(1, p.global_position + Vector3.FORWARD)
 	var dodged := p.hp == p.max_hp
 	await frames(24)
 	var dist := (p.global_position - x0).length()
+	p.ai_target = false
 	check("roll dodges a hit", dodged, "hp %d" % p.hp)
 	check("roll covers ground", dist > 4.0, "%.1f m in 0.45 s" % dist)
 
@@ -647,10 +655,10 @@ func _hall_tests(arena: Vector3) -> void:
 	mon.queue_free()
 
 	# 36. Light: the lantern lights its chasm, your body shadows it, and wearing the candle you shine instead
-	var spot := Vector3(-6, 4.5, 104)
-	await _fresh_player(Vector3(6, 4.6, 104))
+	var spot := Vector3(-3, 4.5, 106)
+	await _fresh_player(m["hall_c"] + Vector3(0, 0, -4))
 	var open_lit := Lighting.is_lit(spot, p)
-	await _fresh_player(m["hall_c"])
+	await _fresh_player(Vector3(3, 4.6, 106))
 	var shadowed := not Lighting.is_lit(spot, p)
 	p.set_candle(true)
 	var candle_lit := Lighting.is_lit(spot, p)
@@ -688,11 +696,9 @@ func _hall_tests(arena: Vector3) -> void:
 			far += 1
 	check("grass fire spreads, melts the ice, lights the brazier, opens the gate", far == 12 and gate_a.opened, "%d of 12 patches burnt, gate open %s" % [far, gate_a.opened])
 
-	# 39. Umbra appears in front of you, then floats over the dark chasm, mirrored, to the moon plate
+	# 39. Umbra floats over the dark chasm, mirrored, to the moon plate
 	await _fresh_player(m["hall_b"])
 	var u := _summon_facing_north()
-	var ahead := u.global_position - p.global_position
-	check("Umbra appears 1.5 m in front of you", absf(ahead.z - 1.5) < 0.05 and absf(ahead.x) < 0.05, "offset %s" % [ahead])
 	var ux0 := u.global_position.x
 	var y_start := u.global_position.y
 	var low := y_start
@@ -708,18 +714,17 @@ func _hall_tests(arena: Vector3) -> void:
 	check("Umbra on the moon plate opens the gate", gate_b.opened, "open %s" % gate_b.opened)
 	await _fresh_player(m["hall_b"])
 	u = _summon_facing_north()
-	var uz0 := u.global_position.z
 	p.ai_move = Vector2(0, 1)
-	await frames(20)
+	await frames(12)
 	p.ai_move = Vector2.ZERO
-	var dz: float = u.global_position.z - uz0
+	var dz: float = u.global_position.z - (m["hall_b"] as Vector3).z
 	check("walking +Z moves Umbra +Z too", dz > 0.8, "Umbra moved %.1f m" % dz)
 
 	# 40. Light makes Umbra fall: over the chasm, putting the candle on drops it and it fades
 	await _fresh_player(m["hall_b"])
 	u = _summon_facing_north()
 	p.ai_move = Vector2(1, 0)
-	await frames(30)
+	await frames(12)
 	p.ai_move = Vector2.ZERO
 	var over := u.global_position.x < -1.5
 	p.set_candle(true)
@@ -736,40 +741,42 @@ func _hall_tests(arena: Vector3) -> void:
 	p.ai_move = Vector2.ZERO
 	check("in sunlight Umbra crawls on the ground", u.lit and on_ground and crawl <= t.umbra_crawl_speed + 0.1, "lit %s, on ground %s, %.1f m/s" % [u.lit, on_ground, crawl])
 
-	# 42. Across the lit chasm Umbra only floats inside your shadow: pinned at the railing on the lantern's line,
-	# push forward and Umbra drifts through the bars onto the plate
+	# 42. Across the lit chasm Umbra only floats inside your shadow
 	var gate_c: Gate = m["hall_c_gate"]
-	await _fresh_player(m["hall_c"] + Vector3(3.5, 0, 0)) # well off the lantern's line
+	await _fresh_player(m["hall_c"] + Vector3(0, 0, -3.0)) # well off the lantern's line
 	u = _summon_facing_north()
-	p.ai_move = Vector2(0, 1)
+	p.ai_move = Vector2(1, 0)
 	for i in 90:
 		await physics_frame
 	p.ai_move = Vector2.ZERO
 	var fell := p.umbra == null
-	await _fresh_player(m["hall_c"])
+	await _fresh_player(m["hall_c"]) # on the line: your body shades it all the way
 	u = _summon_facing_north()
-	p.ai_move = Vector2(0, 1)
-	var held := true
+	p.ai_move = Vector2(1, 0)
 	for i in 150:
 		await physics_frame
-		held = held and p.global_position.z < 100.0
-		if p.umbra == null or gate_c.opened:
+		if p.umbra == null:
 			break
 	p.ai_move = Vector2.ZERO
 	check("off the lantern's line Umbra falls", fell, "fell %s" % fell)
-	check("in your shadow Umbra crosses the lit chasm and opens the gate", p.umbra != null and gate_c.opened and held,
-		"Umbra out %s, gate open %s, railing held you %s" % [p.umbra != null, gate_c.opened, held])
-	# the bay is barred: you can't walk in and call Umbra onto the plate yourself
-	await _fresh_player(Vector3(-6, 4.6, 115))
-	p.ai_move = Vector2(0, -1)
-	await frames(60)
-	p.ai_move = Vector2.ZERO
-	check("the plate's bay keeps you out", p.global_position.z > 113.5, "reached z %.1f" % p.global_position.z)
-	await _fresh_player(Vector3(-1.4, 4.6, 112))
-	p.cam_basis = Basis(Vector3.UP, PI / 2.0) # facing west, at the bay's side wall
+	check("in your shadow Umbra crosses the lit chasm and opens the gate", p.umbra != null and gate_c.opened,
+		"Umbra out %s, gate open %s" % [p.umbra != null, gate_c.opened])
+
+	# 43b. Umbra appears 1.5 m beside you on the mirror line, or short of a wall
+	await _fresh_player(arena)
+	var ub := _summon_facing_north()
+	var off := ub.global_position - p.global_position
+	check("Umbra appears 1.5 m beside you", absf(absf(off.x) - 1.5) < 0.05 and absf(off.z) < 0.05, "offset %s" % [off])
 	p.toggle_umbra()
-	check("Umbra doesn't appear through a wall", p.umbra.global_position.x > -2.0, "appeared at x %.1f" % p.umbra.global_position.x)
+	var wallb: StaticBody3D = level.box(p.global_position + Vector3(off.x * 0.6, 0.5, 0), Vector3(0.3, 3, 3), Basis(), Color.GRAY)
+	await frames(3)
 	p.toggle_umbra()
+	await frames(2)
+	var ub2 := p.umbra
+	var through := signf(ub2.global_position.x - wallb.global_position.x) == signf(off.x)
+	check("Umbra doesn't appear through a wall", not through, "appeared at x %.2f, wall at x %.2f" % [ub2.global_position.x, wallb.global_position.x])
+	p.toggle_umbra()
+	wallb.queue_free()
 
 
 func _yard_tests(arena: Vector3) -> void:
@@ -949,10 +956,19 @@ func _scale_tests(arena: Vector3) -> void:
 	var t: Tuning = level.t
 	var m: Dictionary = level.marks
 
-	# 50. Small: a third the size, slower, lower jumps
+	# 50. Pads: stepping on the shrink pad makes you small, the grow pad makes you normal again.
+	# Small: a third the size, slower, lower jumps
+	await _fresh_player(Vector3(-58, 0.6, 42))
+	p.ai_move = Vector2(-1, 0)
+	await frames(25)
+	p.ai_move = Vector2.ZERO
+	var shrank := p.small
+	p.ai_move = Vector2(1, 0)
+	await frames(50)
+	p.ai_move = Vector2.ZERO
+	check("the shrink pad makes you small and the grow pad normal", shrank and not p.small, "small after shrink pad %s, after grow pad %s" % [shrank, p.small])
 	await _fresh_player(arena)
-	p.inventory.add("shrink")
-	p.ai_item = p.inventory.slots.find("shrink")
+	p.set_small(true)
 	await frames(3)
 	var r := p.radius()
 	p.ai_move = Vector2(0, -1)
@@ -969,9 +985,8 @@ func _scale_tests(arena: Vector3) -> void:
 	# 51. Grates stop you at normal size; small you slip through
 	var ends := []
 	for shrunk in [false, true]:
-		await _fresh_player(m["garden_grate_ramp"])
-		if shrunk:
-			p.set_small(true)
+		# small: walk over the shrink pad at the ramp's foot; normal: start past it
+		await _fresh_player(m["garden_grate_ramp"] if shrunk else Vector3(-65, 0.6, 65.5))
 		p.ai_move = Vector2(0, -1)
 		await frames(200)
 		p.ai_move = Vector2.ZERO
@@ -986,18 +1001,23 @@ func _scale_tests(arena: Vector3) -> void:
 	var grew := p.set_small(false)
 	check("you can't grow inside a grate", not grew and p.small, "grew %s" % grew)
 
-	# 53. Small crosses the cracked floor without breaking it; grown, a roll bursts the cracked wall
+	# 53. Small crosses the cracked floor without breaking it; the island's grow pad makes you normal,
+	# and a locked-on roll bursts the cracked wall (a small one doesn't)
 	var wall: CrackedWall = m["garden_cracked_wall"]
 	await _fresh_player(m["garden_grate_in"])
 	p.set_small(true)
 	p.ai_move = Vector2(0, -1)
 	await frames(90)
 	p.ai_move = Vector2.ZERO
+	var grown_on_pad := not p.small
 	var broken := 0
 	for c in level.get_children():
 		if c is CrackedFloor and (c as CrackedFloor).broken:
 			broken += 1
 	var crossed := p.global_position.z < 50.0 and p.global_position.y > 2.0
+	p.set_small(true)
+	p.ai_target = true
+	await frames(3)
 	await _tap(Vector3.FORWARD) # a small roll into the wall
 	await frames(30)
 	var small_bounced := is_instance_valid(wall) and not wall.smashed
@@ -1005,9 +1025,25 @@ func _scale_tests(arena: Vector3) -> void:
 	await frames(10)
 	await _tap(Vector3.FORWARD)
 	await frames(20)
+	p.ai_target = false
 	check("small, you cross the cracked floor without breaking it", crossed and broken == 0, "crossed %s, %d tiles broken" % [crossed, broken])
+	check("the island's grow pad makes you normal", grown_on_pad, "normal %s" % grown_on_pad)
 	check("a normal-size roll bursts the cracked wall; a small one doesn't", small_bounced and grew2 and not is_instance_valid(wall),
 		"small bounced %s, grew %s, wall gone %s" % [small_bounced, grew2, not is_instance_valid(wall)])
+
+	# 53b. A bomb blows up a cracked wall too
+	await _fresh_player(arena)
+	var wall2 := CrackedWall.make(level, arena + Vector3(0, -0.6, -2.0), Vector3(2, 2.5, 0.5))
+	p.inventory.add("bombs", 1)
+	p.ai_item = p.inventory.slots.find("bombs")
+	await frames(3)
+	p.ai_item = p.inventory.slots.find("bombs") # standing still: set it down at your feet
+	await frames(3)
+	p.ai_move = Vector2(0, 1) # walk clear
+	await frames(40)
+	p.ai_move = Vector2.ZERO
+	await frames(int(Bomb.FUSE * 60.0))
+	check("a bomb blows up a cracked wall", not is_instance_valid(wall2), "wall still there %s" % is_instance_valid(wall2))
 
 	# 54. At normal size your weight breaks a cracked floor and you drop through
 	await _fresh_player(m["garden_grate_mid"])
@@ -1023,11 +1059,10 @@ func _scale_tests(arena: Vector3) -> void:
 	for i in 120:
 		await physics_frame
 		furthest = minf(furthest, p.global_position.z)
-		sank = sank or p.global_position.z > bank.z + 0.5
+		sank = sank or p.global_position.x < -94.0 # put back on the bank, off to the side
 	p.ai_move = Vector2.ZERO
 	check("normal size you sink in the pond and are put back on the bank", sank and furthest > 64.0, "furthest z %.1f, put back %s" % [furthest, sank])
-	await _fresh_player(bank)
-	p.set_small(true)
+	await _fresh_player(m["garden_pond_shrink"]) # walk over the bank's shrink pad into the water
 	p.ai_move = Vector2(0, -1)
 	var low := 99.0
 	for i in 420:
@@ -1054,9 +1089,8 @@ func _scale_tests(arena: Vector3) -> void:
 	var held_detail := "cover broken %s, y %.1f" % [cover.broken, p.global_position.y]
 	p.set_small(false)
 	await frames(45)
-	var dropped := cover.broken and p.global_position.y < 0.0
+	var dropped := cover.broken and p.small # fell through onto the vent's shrink pad
 	var dropped_y := p.global_position.y
-	p.set_small(true)
 	var top := 0.0
 	var on_tower := false
 	for i in 300:
@@ -1069,7 +1103,7 @@ func _scale_tests(arena: Vector3) -> void:
 			break
 	p.ai_move = Vector2.ZERO
 	check("small, you don't break the vent's cover", held, held_detail)
-	check("normal size, your weight breaks the cover and you drop in", dropped, "y %.1f" % dropped_y)
+	check("normal size, your weight breaks the cover; you drop onto the vent's shrink pad", dropped, "small %s, y %.1f" % [p.small, dropped_y])
 	check("small in the updraft, you rise onto the %.0f m tower" % tower, on_tower, "peak %.1f, ended y %.1f" % [top, p.global_position.y])
 
 	# 57. The ferry: small with the magnet you fly along the iron's line, but only within magnet_fly_range of it
@@ -1090,7 +1124,17 @@ func _scale_tests(arena: Vector3) -> void:
 	p.inventory.add("magnet")
 	await frames(90) # normal size, pull: the iron slides up to you
 	var iron_z := iron.global_position.z
-	p.set_small(true) # small, pull: now you're drawn to it and cling
+	var pad: Vector3 = m["garden_ferry_shrink"]
+	p.ai_move = Vector2(1, (pad.z - p.global_position.z) / (pad.x - p.global_position.x)).normalized() # step aside onto the shrink pad
+	for i in 90:
+		await physics_frame
+		if p.small:
+			break
+	p.ai_move = Vector2(-1, 0) # and back into the iron's line: pull draws you to it and you cling
+	for i in 120:
+		await physics_frame
+		if p.magnet_flying:
+			p.ai_move = Vector2.ZERO
 	await frames(30)
 	var clung := p.magnet_flying and absf(p.global_position.z - (iron_z - 1.0 - p.radius())) < 0.2
 	var clung_z := p.global_position.z
@@ -1112,3 +1156,23 @@ func _scale_tests(arena: Vector3) -> void:
 		await physics_frame
 	check("small, pull flies you back across to the iron", p.global_position.z > 100.5 and p.global_position.z < 102.0 and p.global_position.y > -0.5,
 		"ended z %.1f y %.1f" % [p.global_position.z, p.global_position.y])
+
+	# 58. Overspeed bleeds back to top speed on the flat, but running downhill still builds speed
+	await _fresh_player(arena)
+	p.velocity = Vector3(24.0, 0, 0) # east: open floor for 50 m
+	p.ai_move = Vector2(1, 0)
+	await frames(60)
+	var after1 := p.flat_speed()
+	await frames(120)
+	var after3 := p.flat_speed()
+	p.ai_move = Vector2.ZERO
+	check("on the flat, overspeed decays at %.0f m/s² to top speed" % t.overspeed_decay,
+		absf(after1 - (24.0 - t.overspeed_decay)) < 0.6 and absf(after3 - t.top_speed) < 0.2, "24 -> %.1f after 1 s, %.1f after 3 s" % [after1, after3])
+	await _fresh_player(Vector3(32, 6.4, -15.0)) # near the top of the 30° ramp, facing down it
+	p.ai_move = Vector2(0, 1)
+	var fastest := 0.0
+	for i in 90:
+		await physics_frame
+		fastest = maxf(fastest, p.velocity.length())
+	p.ai_move = Vector2.ZERO
+	check("running down the 30° ramp builds speed past top speed", fastest > t.top_speed + 4.0, "fastest %.1f m/s" % fastest)

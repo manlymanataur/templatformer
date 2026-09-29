@@ -15,7 +15,7 @@ Locally: open this folder in Godot 4.5 and press F5.
 | Jump (hold for higher) | Space | A |
 | Jump chain (Mario style) | jump again right as you land while running: double, then triple | |
 | Wall jump | push into a wall in the air, then jump | |
-| Roll (dodges hits) | quick tap of a direction (no roll button) | quick flick of the stick |
+| Roll (dodges hits) | while holding lock-on, a quick tap of a direction (no roll button) | same, quick flick of the stick |
 | Lock on / strafe (hold) | Shift or Z | left trigger |
 | Dodge while locked on | quick tap of the stick: sideways side hop, back backflip, forward roll | same |
 | Camera | mouse (click to capture, Esc to release), or I J K L | right stick |
@@ -27,12 +27,13 @@ Locally: open this folder in Godot 4.5 and press F5.
 | Candle Hat (quick slot) | wear it to light the dark and set fire to vines, grass, ice and braziers | |
 | Umbra (quick slot) | call or dismiss the mirrored ghost. It floats in the dark and crawls in light, and in the dark it copies your attacks with a greatsword | |
 | Magnet (quick slot) | always on once you have it. The button flips it between − (pull) and + (push) | |
-| Shrink (quick slot) | shrink to a third of your size, or grow back if there's room | |
 | Inventory (assign items to 1-3) | Enter | Start |
 | Respawn | R | Back |
 
 The panel in the corner edits every feel number live: `[` `]` pick a value, `-` `=` change it by 10%,
 Backspace resets it, Tab hides the panel. Changes are saved and survive restarts.
+
+Speed above your running top speed (from slopes, pads, launches) bleeds back down on flat ground. Running downhill still builds it.
 
 ## Ember & Umbra hall
 
@@ -43,7 +44,7 @@ Up the ramp behind the start. The hall is dark, so light is a rule, not just a l
 - In the dark Umbra floats at its height, even over a chasm. In light it drops to the ground and crawls. Light that hits it over a chasm drops it in, and you call it again.
 - Your body casts a shadow for Umbra, unless you're wearing the lit candle.
 - Moon plates only react to Umbra.
-- Umbra appears 1.5 m in front of you. In the lantern room, stand on the lantern's line at the railing, face across and keep pushing: the railing holds you while Umbra drifts on across inside your shadow, through the bars to the plate.
+- Umbra appears 1.5 m beside you, on the mirror line.
 - In the dark Umbra copies each of your spear moves, mirrored, with a greatsword (2 damage). Lit, it's too limp to swing.
 
 ## Lodestone yard
@@ -59,11 +60,11 @@ East of the ramps, on a 2 m grid. Pick up the magnet at the south edge.
 
 ## Scale garden
 
-West of the gap course. Pick up Shrink at its gate.
+West of the gap course. Green shrink pads make you small, orange grow pads make you normal again (if there's room).
 
 - Small you're a third of the size, run at 60% speed and jump about 1 m.
-- Small you slip through grates, float on water and ride fans. You're too light to crack a cracked floor.
-- At normal size you sink in water, your weight breaks cracked floors a moment after you stand on them, and a roll bursts cracked walls.
+- Small you slip through grates, fences and bars, float on water and ride fans. You're too light to crack a cracked floor.
+- At normal size you sink in water, your weight breaks cracked floors a moment after you stand on them, and a roll bursts cracked walls. Bombs burst them at any size.
 - Growing needs room. You can't grow inside a grate.
 - Small with the magnet, iron moves you instead of you moving it. Pull flies you along an iron's line to its side and you cling there. Push flies you away. Its reach is 22 m.
 - Three stations:
