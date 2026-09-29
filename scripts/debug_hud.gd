@@ -10,7 +10,7 @@ var shown := true
 
 func _ready() -> void:
 	label = Label.new()
-	label.position = Vector2(12, 10)
+	label.position = Vector2(12, 52)
 	label.add_theme_font_size_override("font_size", 15)
 	label.add_theme_color_override("font_outline_color", Color.BLACK)
 	label.add_theme_constant_override("outline_size", 5)
@@ -39,7 +39,7 @@ func _process(_dt: float) -> void:
 		return
 	var s := "speed %5.1f   %s   slope %2d°%s\n" % [player.speed(), "ground" if player.is_on_floor() else "air",
 		int(rad_to_deg(player.up_direction.angle_to(Vector3.UP))), "   LOCKED" if player.target else ""]
-	s += "Tab hide · [ ] pick · - = change · Backspace reset · R respawn\n\n"
+	s += "Tab hide · [ ] pick · - = change · Backspace reset · R respawn\nF attack · 1 2 3 items · Enter inventory\n\n"
 	for i in Tuning.EDITABLE.size():
 		var n := Tuning.EDITABLE[i]
 		s += ("> " if i == sel else "   ") + "%s  %.2f\n" % [n, t.get(n)]

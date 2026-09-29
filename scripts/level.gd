@@ -1,6 +1,7 @@
 extends Node3D
 ## Movement and camera test room, built in code so every measurement is explicit.
-## Stations: ramps (10-60°), step heights, gap widths, boost pad into a loop, quarter pipe, lock-on targets.
+## Stations: ramps (10-60°), step heights, gap widths, boost pad into a quarter pipe, lock-on targets,
+## item pickups and a monster arena.
 
 var t: Tuning
 var player: Player
@@ -8,7 +9,6 @@ var use_defaults := false ## tests set this so saved tuning doesn't change resul
 var marks := {} ## named positions the tests start from
 var checker: ImageTexture
 
-const LOOP_R := 6.0
 
 func _ready() -> void:
 	t = Tuning.new()
@@ -28,6 +28,9 @@ func _ready() -> void:
 	rig.player = player
 	rig.t = t
 	add_child(rig)
+	var game_hud = preload("res://scripts/game_hud.gd").new()
+	game_hud.player = player
+	add_child(game_hud)
 	var hud = preload("res://scripts/debug_hud.gd").new()
 	hud.t = t
 	hud.player = player
@@ -102,20 +105,9 @@ func boost_pad(pos: Vector3, dir: Vector3) -> void:
 	a.global_position = pos + Vector3(0, 0.5, 0)
 	a.body_entered.connect(func(b): if b is Player: b.boost(dir))
 
-func _mask_zone(pos: Vector3, size: Vector3, mask: int) -> void:
-	var a := Area3D.new()
-	var c := CollisionShape3D.new()
-	var s := BoxShape3D.new()
-	s.size = size
-	c.shape = s
-	a.add_child(c)
-	add_child(a)
-	a.global_position = pos
-	a.body_entered.connect(func(b): if b is Player: b.collision_mask = mask)
-
 ## Curved track: an arc of the circle with this centre, in the plane of fwd and up,
 ## from angle a0 to a1 (0 = bottom, 90 = far wall, 180 = top), drifting sideways by shift over a full turn.
-func arc(center: Vector3, r: float, a0: float, a1: float, fwd: Vector3, shift: float, width: float, color: Color, layer := 1) -> void:
+func arc(center: Vector3, r: float, a0: float, a1: float, fwd: Vector3, shift: float, width: float, color: Color) -> void:
 	var side := fwd.cross(Vector3.UP).normalized()
 	var steps := int(ceil(absf(a1 - a0) / 7.5))
 	for k in steps:
@@ -125,7 +117,7 @@ func arc(center: Vector3, r: float, a0: float, a1: float, fwd: Vector3, shift: f
 		var tangent := fwd * cos(th) + Vector3.UP * sin(th)
 		var seg := 2.0 * PI * r * absf(a1 - a0) / 360.0 / steps * 1.12
 		var b := Basis(side, inward, -tangent)
-		box(p - inward * 0.25, Vector3(width, 0.5, seg), b.orthonormalized(), color).collision_layer = layer
+		box(p - inward * 0.25, Vector3(width, 0.5, seg), b.orthonormalized(), color)
 
 func _build() -> void:
 	box(Vector3(0, -0.5, 0), Vector3(240, 1, 240), Basis(), Color(0.55, 0.75, 0.5))
@@ -153,29 +145,18 @@ func _build() -> void:
 		marks["step%.1f" % hs[i]] = Vector3(x, 0.6, -4.0)
 		marks["step%.1f_h" % hs[i]] = hs[i]
 
-	# Gap course: 4 m tall columns along -X at z = +24, gaps grow
+	# Gap course: 1 m tall platforms along -X at z = +24, gaps grow. Fall in and you can walk back out.
 	var gaps := [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
 	var x := -6.0
-	box(Vector3(x, 2.0, 24.0), Vector3(6, 4, 4), Basis(), Color(0.7, 0.55, 0.8))
-	label(Vector3(x, 5.5, 24.0), "gaps")
+	box(Vector3(x, 0.5, 24.0), Vector3(6, 1, 4), Basis(), Color(0.7, 0.55, 0.8))
+	label(Vector3(x, 2.5, 24.0), "gaps")
 	for g in gaps:
 		var edge := x - 3.0
-		marks["gap%d" % int(g)] = Vector3(edge + 6.0, 4.6, 24.0) # start 6 m back from the edge, running -X
+		marks["gap%d" % int(g)] = Vector3(edge + 6.0, 1.6, 24.0) # start 6 m back from the edge, running -X
 		x = edge - g - 3.0
-		box(Vector3(x, 2.0, 24.0), Vector3(6, 4, 4), Basis(), Color(0.7, 0.55, 0.8))
-		label(Vector3(x + 3.0 + g / 2.0, 5.5, 24.0), "%d m" % int(g))
-	marks["gap_y"] = 4.0
-
-	# Boost pad into a loop along -Z
-	boost_pad(Vector3(0, 0, -30), Vector3.FORWARD)
-	# Sonic's layer trick: the way up (layer 2) and the way down (layer 3) are solid at different times,
-	# so the loop's lower back half doesn't block you on the way in, nor the front half on the way out.
-	arc(Vector3(0, LOOP_R, -60), LOOP_R, 0.0, 180.0, Vector3.FORWARD, 0.0, 4.0, Color(0.5, 0.7, 0.95), 2)
-	arc(Vector3(0, LOOP_R, -60), LOOP_R, 180.0, 360.0, Vector3.FORWARD, 0.0, 4.0, Color(0.45, 0.62, 0.9), 4)
-	_mask_zone(Vector3(0, 2.0 * LOOP_R - 1.0, -60), Vector3(4, 2, 3), 1 | 4) # at the top: switch to the way down
-	_mask_zone(Vector3(0, 1, -48), Vector3(4, 2, 2), 1 | 2) # before the loop: reset
-	_mask_zone(Vector3(0, 1, -72), Vector3(4, 2, 2), 1 | 2) # after the loop: reset
-	marks["loop_start"] = Vector3(0, 0.6, -20)
+		box(Vector3(x, 0.5, 24.0), Vector3(6, 1, 4), Basis(), Color(0.7, 0.55, 0.8))
+		label(Vector3(x + 3.0 + g / 2.0, 2.5, 24.0), "%d m" % int(g))
+	marks["gap_y"] = 1.0
 
 	# Quarter pipe facing +Z, off to the side
 	boost_pad(Vector3(-40, 0, -30), Vector3.FORWARD)
@@ -198,4 +179,19 @@ func _build() -> void:
 		post.add_child(head)
 		post.add_to_group("targets")
 	label(Vector3(-2, 3, 12), "hold Shift / Z to lock on")
+
+	# Item pickups near the start
+	Pickup.spawn(self, "spear", 1, Vector3(4, 0.8, 4))
+	label(Vector3(4, 2.4, 4), "spear")
+	Pickup.spawn(self, "bombs", 5, Vector3(8, 0.8, 4))
+	label(Vector3(8, 2.4, 4), "bombs")
+	Pickup.spawn(self, "potion", 1, Vector3(12, 0.8, 4))
+	label(Vector3(12, 2.4, 4), "potion")
+	marks["pickups"] = Vector3(4, 0.6, 8)
+
+	# Monster arena
+	box(Vector3(34, 0.1, 40), Vector3(22, 0.2, 22), Basis(), Color(0.75, 0.7, 0.55))
+	label(Vector3(34, 3, 28), "monsters")
+	for p in [Vector3(30, 1, 40), Vector3(38, 1, 36), Vector3(36, 1, 45)]:
+		Monster.spawn(self, p)
 	marks["targets"] = Vector3(-2, 0.6, 5)
