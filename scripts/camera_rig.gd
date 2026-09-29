@@ -8,6 +8,7 @@ var t: Tuning
 var yaw := 0.0
 var pitch := -0.3
 var idle := 0.0
+var zoom := 1.0
 var arm: SpringArm3D
 var cam: Camera3D
 
@@ -41,7 +42,8 @@ func _physics_process(dt: float) -> void:
 		idle = 0.0
 	else:
 		idle += dt
-	global_position = global_position.lerp(player.global_position + Vector3.UP * 1.0, clampf(t.cam_lag * dt, 0.0, 1.0))
+	zoom = lerpf(zoom, t.small_scale * 1.6 if player.small else 1.0, clampf(4.0 * dt, 0.0, 1.0)) # pull in close when you're small
+	global_position = global_position.lerp(player.global_position + Vector3.UP * zoom, clampf(t.cam_lag * dt, 0.0, 1.0))
 	var hv := Vector3(player.velocity.x, 0, player.velocity.z)
 	if player.target != null:
 		var d := player.target.global_position - player.global_position
@@ -52,5 +54,5 @@ func _physics_process(dt: float) -> void:
 	elif idle > t.cam_recenter_delay and hv.length() > 4.0:
 		yaw = lerp_angle(yaw, atan2(-hv.x, -hv.z), clampf(1.5 * dt, 0.0, 1.0))
 	rotation = Vector3(pitch, yaw, 0)
-	arm.spring_length = t.cam_distance
+	arm.spring_length = t.cam_distance * zoom
 	player.cam_basis = Basis(Vector3.UP, yaw)

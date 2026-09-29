@@ -114,8 +114,44 @@ func arc(center: Vector3, r: float, a0: float, a1: float, fwd: Vector3, shift: f
 		var b := Basis(side, inward, -tangent)
 		box(p - inward * 0.25, Vector3(width, 0.5, seg), b.orthonormalized(), color)
 
+## The 240 m ground slab (1 m thick, top at y 0), leaving out the holes (x, z, width, depth).
+func _ground(holes: Array) -> void:
+	var xs := _cuts(holes, true)
+	var zs := _cuts(holes, false)
+	for j in zs.size() - 1:
+		var z0: float = zs[j]
+		var z1: float = zs[j + 1]
+		var run := -1 # solid cells along x merge into one box per row
+		for i in xs.size():
+			var solid := i < xs.size() - 1
+			if solid:
+				var mid := Vector2((xs[i] + xs[i + 1]) / 2.0, (z0 + z1) / 2.0)
+				for h in holes:
+					solid = solid and not (h as Rect2).has_point(mid)
+			if solid and run < 0:
+				run = i
+			elif not solid and run >= 0:
+				var xa: float = xs[run]
+				var xb: float = xs[i]
+				box(Vector3((xa + xb) / 2.0, -0.5, (z0 + z1) / 2.0), Vector3(xb - xa, 1, z1 - z0), Basis(), Color(0.55, 0.75, 0.5))
+				run = -1
+
+## Sorted, de-duplicated edges of the holes along x (or z), plus the slab's own edges.
+func _cuts(holes: Array, along_x: bool) -> Array:
+	var v := [-120.0, 120.0]
+	for h in holes:
+		var r: Rect2 = h
+		v.append(r.position.x if along_x else r.position.y)
+		v.append(r.end.x if along_x else r.end.y)
+	v.sort()
+	var out := []
+	for x in v:
+		if out.is_empty() or float(x) - float(out[-1]) > 0.01:
+			out.append(x)
+	return out
+
 func _build() -> void:
-	box(Vector3(0, -0.5, 0), Vector3(240, 1, 240), Basis(), Color(0.55, 0.75, 0.5))
+	_ground(ScaleGarden.GROUND_HOLES)
 	label(Vector3(0, 3, -4), "Hold forward: boost pad, then quarter pipe")
 
 	# Ramps along +X, rising toward -Z
@@ -216,5 +252,6 @@ func _build() -> void:
 
 	ShadowHall.build(self)
 	LodestoneYard.build(self)
+	ScaleGarden.build(self)
 	add_child(Power.new())
 	marks["targets"] = Vector3(-2, 0.6, 5)

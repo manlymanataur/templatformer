@@ -2,6 +2,7 @@ class_name Umbra
 extends CharacterBody3D
 ## Umbra, the mirrored ghost. It moves when you move: along the mirror line the same way you go,
 ## across it the opposite way (the line is the camera's left-right when you call it, snapped to the room's axes).
+## It appears 1.5 m in front of you, as the camera sees it.
 ## Walls stop it separately from you, so you can pin yourself against a wall and keep steering it.
 ## In the dark it floats, holding its height, and can drift out over a chasm. In light it goes limp:
 ## it drops to the ground and crawls slowly. Once light knocks it out of the air it falls all the way down,
@@ -37,7 +38,15 @@ static func summon(p: Player) -> Umbra:
 	var r := p.cam_basis * Vector3.RIGHT
 	u.mirror = Vector3(signf(r.x), 0, 0) if absf(r.x) >= absf(r.z) else Vector3(0, 0, signf(r.z))
 	p.get_parent().add_child(u)
-	u.global_position = p.global_position + u.mirror * 1.5
+	# it appears in front of you (the camera's forward, snapped the same way), on the line you don't mirror,
+	# or just short of a wall if one is closer
+	var fwd := Vector3.UP.cross(u.mirror)
+	var at := p.global_position + fwd * 1.5
+	var q := PhysicsRayQueryParameters3D.create(p.global_position, at, 1, [p.get_rid()])
+	var hit := p.get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		at = (hit["position"] as Vector3) - fwd * 0.45
+	u.global_position = at
 	u.home_y = u.global_position.y
 	p.spear.move_started.connect(u.copy_attack)
 	return u
