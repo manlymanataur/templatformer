@@ -57,7 +57,7 @@ extends Resource
 @export var pound_jump_window := 0.25 ## jump within this of a pound landing for a high jump
 @export var pound_jump_mult := 1.5 ## the high jump's speed, times jump_speed (1.5 = triple-jump height)
 @export var pound_slide := 0.8 ## a pound onto a slope turns this much of the fall into downhill speed
-@export var long_jump_speed := 18.0 ## jump out of a roll: forward speed
+@export var long_jump_speed := 20.0 ## jump out of a roll: forward speed
 @export var long_jump_up := 9.0 ## jump out of a roll: upward speed
 @export var bomb_regrow := 4.0 ## seconds for a bomb plant to grow a new bomb
 @export var spider_break := 30.0 ## an unhooked spider further than this from you breaks and goes back in your pack

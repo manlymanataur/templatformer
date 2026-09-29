@@ -29,8 +29,8 @@ var _wood: StandardMaterial3D
 static func make(parent: Node, pos: Vector3, tuning: Tuning) -> Seed:
 	var s := Seed.new()
 	s.t = tuning
+	s.position = pos # before add_child, so nothing standing at the origin rides it here (see Monster.spawn)
 	parent.add_child(s)
-	s.global_position = pos
 	s._peak = pos.y
 	return s
 

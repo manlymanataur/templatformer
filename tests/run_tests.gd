@@ -325,6 +325,7 @@ func _combat_tests() -> void:
 	await _rootworks_tests(arena)
 	await _moves_yard_tests(arena)
 	await _combo_tests(arena)
+	await _challenge_tests(arena)
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -1844,3 +1845,88 @@ func _combo_tests(arena: Vector3) -> void:
 	check("a wall kick then a jump on landing is a double jump", kicked and chain == 1, "kicked %s, chain %d" % [kicked, chain])
 	wall.queue_free()
 	await frames(60)
+
+
+## Walk into a challenge door. Returns once you're in the room.
+func _enter_room(c: Challenge) -> void:
+	await _fresh_player(c.door_at + Vector3(0, 0.6, 2.5))
+	p.ai_move = Vector2(0, -1)
+	for i in 60:
+		await physics_frame
+		if c.inside:
+			break
+	p.ai_move = Vector2.ZERO
+	await frames(10)
+
+## Challenge rooms: each door leads to a course, and its star brings you back with the door cleared.
+func _challenge_tests(arena: Vector3) -> void:
+	var m: Dictionary = level.marks
+	var t: Tuning = level.t
+
+	# 85. Rail run: two downhill rails, each kicking you over a 10 m gap
+	var c: Challenge = m["challenge_rail"]
+	await _enter_room(c)
+	var entered := c.inside and p.global_position.distance_to(c.start) < 1.0
+	p.ai_move = Vector2(0, -1)
+	for i in 900:
+		await physics_frame
+		if c.cleared:
+			break
+	p.ai_move = Vector2.ZERO
+	check("a door takes you in; the rail run's two rails and 10 m gaps reach the star", entered and c.cleared and not c.inside
+		and p.global_position.distance_to(c.door_at) < 3.5, "entered %s, cleared %s, back by the door %s" % [entered, c.cleared, p.global_position.distance_to(c.door_at) < 3.5])
+
+	# 86. Pogo chain: pound each of four spike balls to bounce across the 25 m drop
+	c = m["challenge_pogo"]
+	await _enter_room(c)
+	p.ai_move = Vector2(0, -1)
+	var bounces := 0
+	var jumped := false
+	var spikes := [c.start.z - 1.5 - 5.0, c.start.z - 1.5 - 10.0, c.start.z - 1.5 - 15.0, c.start.z - 1.5 - 20.0]
+	for i in 900:
+		await physics_frame
+		if c.cleared:
+			break
+		var z := p.global_position.z
+		if p.is_on_floor() and not jumped and z < c.start.z - 3.5:
+			p.ai_jump = true
+			jumped = true
+		elif p.ai_jump and p.velocity.y < 0.0:
+			p.ai_jump = false
+		if p.pound_t < 0.0 and not p.is_on_floor() and bounces < 4 and absf(z - spikes[bounces]) < 0.6:
+			p.ai_context = true
+			bounces += 1
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	check("pogo chain: four ground pounds on spikes carry you across to the star unharmed", c.cleared and p.hp == p.max_hp and bounces == 4,
+		"cleared %s, pounds %d, hp %d" % [c.cleared, bounces, p.hp])
+
+	# 87. Long jump: 10 m gaps between 4 m platforms. Pound onto each, roll out and long-jump
+	c = m["challenge_long"]
+	await _enter_room(c)
+	p.ai_move = Vector2(0, -1)
+	var longs := 0
+	var o := c.start - Vector3(0, 4.6, -1)
+	p.ai_jump = true
+	await frames(8)
+	p.ai_jump = false
+	p.ai_context = true # pound on the start platform
+	for i in 900:
+		await physics_frame
+		if c.cleared:
+			break
+		var z := p.global_position.z
+		var edge := o.z - floorf((o.z - z) / 14.0) * 14.0 - 4.0
+		if p.roll_t > 0.0 and p.is_on_floor() and not p.ai_jump and z < edge + 0.7:
+			p.ai_jump = true # jump out of the roll at the edge: long jump
+			longs += 1
+		elif p.ai_jump and not p.is_on_floor():
+			p.ai_jump = false
+		for k in range(1, 4):
+			var mid := o.z - k * 14.0 - 2.0
+			if p.pound_t < 0.0 and p.velocity.y < 0.0 and not p.is_on_floor() and absf(z - mid) < 0.8 and p.global_position.y > o.y + 4.5:
+				p.ai_context = true # over the next platform: pound down onto it
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	check("long jump room: pound, roll, long-jump over three %.0f m gaps to the star" % 10.0, c.cleared and longs >= 3, "cleared %s, long jumps %d" % [c.cleared, longs])
+	await _fresh_player(arena)

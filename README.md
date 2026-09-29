@@ -26,7 +26,7 @@ Locally: open this folder in Godot 4.5 and press F5.
 | Climb | push into vines (or a trunk) to climb as high as they go; jump kicks off | |
 | Ledge grab | fall against a wall whose top is within 1.2 m above you: you hang. Push on or jump to pull up, pull away to drop. Iron is too smooth to grab | |
 | Ground pound | E in the air with empty hands: a pause, then straight down at 30 m/s. Onto a monster or spikes it hits and bounces you up (then home in on the next with attack, or pound again). Onto flat ground, jump right away for a 5.4 m high jump, or hold a direction to roll out. Onto a slope, the fall turns into downhill speed | |
-| Long jump | jump out of a roll: 18 m/s forward, about 11 m | |
+| Long jump | jump out of a roll: 20 m/s forward, about 12 m | |
 | Combos | a wall kick counts as the first jump of the chain; rolls keep their speed and gain it downhill; slopes give the speed a triple jump needs | |
 | Grind rail | land or walk onto a rail. Downhill speeds you up, uphill slows you; jump hops off | |
 | Spin attack | hold attack until the tip glows, then let go | |
@@ -57,6 +57,12 @@ Opening a pin link loads the game straight into that spot.
 ## Moves yard
 
 South of the start. One station per move: an 8 m vine tower to climb, a grind rail from its top that runs 4 m downhill (about 18 m/s) and kicks you over a 10 m gap, two spike balls to homing-pogo up to an 8 m ledge (touching spikes hurts), and a 3.5 m block to catch by the ledge. Hits freeze the game for a moment, shake the camera and throw sparks.
+
+Three purple doors along the yard's north edge lead to challenge rooms: short courses floating high above the world, each built around one combo. Touch the star at the end and you're back by the door, which turns gold. Fall off and you start that course again.
+
+- **Pogo chain.** Pound onto four spike balls in a row to bounce across a 25 m drop.
+- **Rail run.** Two downhill rails, each kicking you over a 10 m gap.
+- **Long jump.** Three 10 m gaps between 4 m platforms, too short for a run-up. Pound onto each platform, roll out and long-jump off the edge.
 
 Speed above your running top speed (from slopes, pads, launches) bleeds back down on flat ground. Running downhill still builds it.
 

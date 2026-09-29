@@ -7,8 +7,8 @@ const R := 0.5
 
 static func make(parent: Node, pos: Vector3) -> Spikes:
 	var s := Spikes.new()
+	s.position = pos
 	parent.add_child(s)
-	s.global_position = pos
 	return s
 
 func _ready() -> void:
