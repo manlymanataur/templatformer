@@ -66,6 +66,15 @@ Three purple doors along the yard's north edge lead to challenge rooms: short co
 
 Speed above your running top speed (from slopes, pads, launches) bleeds back down on flat ground. Running downhill still builds it.
 
+## Test colossus
+
+East of the moves yard (warp: "Test colossus"). A 13 m stone beast walks a slow circle and stands still while you're on it. Its feet hurt if it steps on you.
+
+- **Climb** the fur on the outside of either back leg, all the way up to its back.
+- **Back sigil.** A bone plate covers it. Ground pound the plate to crack it off, then pound or hit the sigil.
+- **Front shins.** Only a bomb breaks them (two bomb plants grow at the arena's north edge). With one gone it limps; with both gone it falls to its knees.
+- **Forehead sigil.** It opens once it kneels, low enough to hit from the ground. Strike both sigils and it falls apart.
+
 ## Rootworks
 
 Winch and Propagule, north-east of the monster arena up a 6 m ramp. The lash and the clockwork spider lie at the ramp's foot.

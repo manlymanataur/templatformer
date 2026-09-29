@@ -56,6 +56,7 @@
   - Perfect dodge: a hit during a roll calls `Hitfx.slow`; `Hitfx.world` slows monsters (they multiply their dt by it).
   - `scripts/hitfx.gd`: hitstop (`Engine.time_scale`), camera shake (group `camera_rig`), sparks.
 - `scripts/challenge.gd` builds the challenge rooms (`Challenge.build`): doors in the moves yard, courses floating at y 200+ from x 300. Marks `challenge_<name>` hold each `Challenge` node (`start`, `goal`, `cleared`); walking into a door calls `enter()`, falling below `floor_y` restarts, the star calls `finish()`.
+- `scripts/colossus.gd` is the test colossus (mark `colossus`, warp `colossus_arena`, arena x 56..104, z -118..-70). Its parts are `AnimatableBody3D`s under a pivot at the rear hips (don't use `sync_to_physics`: parts moved by a parent then don't collide). It walks at `colossus_speed` unless `ridden()`. `ColossusShin` is in group `blastable` (only `Bomb.explode` calls `blast`); the back plate is in group `poundable` (a pound landing calls its `on_pound` meta). `ColossusSigil` weak points turn `hurtable` and `targets` only once open. Losing both shins kneels it (pivot pitch) and opens the forehead sigil.
 - `scripts/game_hud.gd` draws the hearts, the quick slots and the pause inventory (Enter). It runs while the game is paused.
 - jovi dropped loops (2026-09-29). Don't bring them back without asking.
 

@@ -67,6 +67,10 @@ func explode() -> void:
 		var node := n as Node3D
 		if node.global_position.distance_to(global_position) <= RADIUS:
 			node.hurt(DAMAGE, global_position)
+	for n in get_tree().get_nodes_in_group("blastable"): # things only a blast breaks (a colossus's shins)
+		var node := n as Node3D
+		if node.global_position.distance_to(global_position) <= RADIUS:
+			node.blast(global_position)
 	var flash := MeshInstance3D.new()
 	var sm := SphereMesh.new()
 	sm.radius = RADIUS

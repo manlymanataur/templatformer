@@ -326,6 +326,7 @@ func _combat_tests() -> void:
 	await _moves_yard_tests(arena)
 	await _combo_tests(arena)
 	await _challenge_tests(arena)
+	await _colossus_tests()
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -1930,3 +1931,93 @@ func _challenge_tests(arena: Vector3) -> void:
 	p.ai_move = Vector2.ZERO
 	check("long jump room: pound, roll, long-jump over three %.0f m gaps to the star" % 10.0, c.cleared and longs >= 3, "cleared %s, long jumps %d" % [c.cleared, longs])
 	await _fresh_player(arena)
+
+## The test colossus: it walks until you're on it, you climb its fur, a pound cracks its back plate, bombs break
+## its shins, and two struck weak points fell it.
+func _colossus_tests() -> void:
+	var m: Dictionary = level.marks
+	var t: Tuning = level.t
+	var col: Colossus = m["colossus"]
+
+	# 88. It walks its circle, and stands still while you ride it
+	await _fresh_player(m["colossus_arena"])
+	var a0 := col.angle
+	await frames(60)
+	var walked := (col.angle - a0) * Colossus.PATROL
+	await _hover(col.to_global(Vector3(0, 13.8, -3)))
+	await frames(20)
+	var a1 := col.angle
+	await frames(60)
+	var still := absf(col.angle - a1) * Colossus.PATROL
+	check("the colossus walks (%.1f m/s) and stops while you're on its back" % t.colossus_speed, walked > t.colossus_speed * 0.8 and still < 0.05 and p.global_position.y > 13.0,
+		"walked %.1f m in 1 s, then %.2f m with you on it (you at y %.1f)" % [walked, still, p.global_position.y])
+
+	# 89. Climb the fur on a rear leg from the ground up onto its 13 m back
+	await _fresh_player(m["colossus_arena"])
+	await frames(5)
+	await _hover(col.fur_foot(-1.0))
+	await frames(10)
+	var climbed := false
+	for i in 600:
+		var aim := col.to_global(Vector3(-3.65, 0, 5.5)) - p.global_position
+		aim.y = 0.0
+		aim = aim.normalized()
+		p.ai_move = Vector2(aim.x, aim.z)
+		await physics_frame
+		climbed = climbed or p.climbing != null
+		if p.is_on_floor() and p.global_position.y > 12.9:
+			break
+	p.ai_move = Vector2.ZERO
+	await frames(40)
+	check("climb the colossus's fur from the ground onto its 13 m back", climbed and p.global_position.y > 12.9 and col.ridden(),
+		"climbed %s, ended at y %.1f, riding %s" % [climbed, p.global_position.y, col.ridden()])
+
+	# 90. The back plate shrugs off the spear; a ground pound cracks it off, and a second pound strikes the sigil
+	p.inventory.add("spear")
+	var fwd := -col.global_basis.z
+	await _hover(col.to_global(Vector3(0, 14.2, 3.2)))
+	p.facing = fwd
+	await frames(20)
+	p.ai_attack = true
+	await frames(30)
+	var plate_after_spear := col.plate != null
+	await _hover(col.to_global(Vector3(0, 16.5, 1)))
+	p.ai_context = true
+	await frames(60)
+	var cracked := col.plate == null and col.sigils[0].opened
+	await _hover(col.to_global(Vector3(0, 16.0, 1)))
+	p.ai_context = true
+	await frames(60)
+	check("a pound cracks the colossus's back plate (the spear can't), and a second pound strikes the sigil under it",
+		plate_after_spear and cracked and col.sigils[0].struck and not col.felled,
+		"plate survived the spear %s, cracked by the pound %s, sigil struck %s" % [plate_after_spear, cracked, col.sigils[0].struck])
+
+	# 91. A bomb blast breaks a front shin; with both gone it kneels, its forehead opens low enough to spear, and it falls
+	await _fresh_player(m["colossus_arena"])
+	var broke := []
+	for k in 2:
+		var shin: ColossusShin = col.shins[0]
+		await _pull_bomb()
+		var b: Bomb = p.carrying
+		p.ai_context = true # standing still: set it down
+		await frames(3)
+		b._t = Bomb.FUSE - 0.1
+		b.global_position = shin.global_position + col.global_basis.x * signf(shin.position.x) * 2.0 + Vector3.DOWN * 1.7
+		await frames(20)
+		broke.append(not is_instance_valid(shin) or not col.shins.has(shin))
+	await frames(90)
+	var head: ColossusSigil = col.sigils[1]
+	var low := head.global_position.y
+	var face := -col.global_basis.z
+	face.y = 0.0
+	face = face.normalized()
+	await _fresh_player(Vector3(head.global_position.x, 0.6, head.global_position.z) + face * 1.7)
+	p.inventory.add("spear")
+	p.facing = -face
+	await frames(5)
+	p.ai_attack = true
+	await frames(30)
+	check("bombs break both front shins, it kneels with its forehead sigil %.1f m up, and striking it fells the colossus" % low,
+		broke == [true, true] and col.kneel == 1.0 and low < 2.5 and col.felled,
+		"shins broken %s, kneel %.1f, forehead at %.1f m, felled %s" % [broke, col.kneel, low, col.felled])
+	await _fresh_player(m["colossus_arena"])
