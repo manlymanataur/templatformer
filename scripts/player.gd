@@ -89,6 +89,9 @@ var rail_dir := 1.0
 var rail_speed := 0.0
 var _rail_cool := 0.0
 var _teleported := 0 ## frames until moving floors pass their motion on again
+var roll_speed_now := 0.0 ## a roll keeps the speed you rolled at (and gains downhill)
+var pound_t := -1.0 ## ground pound: >= 0 while pounding (time since it started)
+var pound_land := 99.0 ## seconds since a pound landed on flat ground (a jump now is a high jump)
 var _pogo_last: Node3D = null ## what you last bounced off; homing skips it until you land
 var _flick: MeshInstance3D
 var _flick_t := 0.0
@@ -310,6 +313,7 @@ func drop_holds() -> void:
 	homing = null
 	hang = Vector3.ZERO
 	rail = null
+	pound_t = -1.0
 
 ## Where the camera looks: the spider while you steer it, otherwise you.
 func focus() -> Node3D:
@@ -450,6 +454,8 @@ func context() -> void:
 		release_bomb()
 	elif pilot != null:
 		return
+	elif not is_on_floor() and _can_pound():
+		pound_t = 0.0
 	elif _grab_seed():
 		pass
 	elif _pick_bomb():
@@ -608,6 +614,7 @@ func _physics_process(dt: float) -> void:
 		land_time = 0.0
 	elif on_floor:
 		land_time += dt
+	pound_land += dt
 
 	roll_buffer = maxf(roll_buffer - dt, 0.0)
 	if roll_buffer > 0.0 and roll_t <= 0.0 and on_floor and carrying == null:
@@ -620,6 +627,8 @@ func _physics_process(dt: float) -> void:
 	magnet_flying = fly != Vector3.ZERO
 	if homing != null:
 		_homing_step(dt)
+	elif pound_t >= 0.0:
+		_pound_step(dt, on_floor, wish)
 	elif rail != null or _catch_rail():
 		_rail_step(dt, jump_pressed)
 	elif grapple_t > 0.0:
@@ -633,7 +642,7 @@ func _physics_process(dt: float) -> void:
 	elif water != null and small and global_position.y <= water.surface() + 0.05 and velocity.y <= 0.0:
 		_swim_step(dt, wish, water)
 	elif roll_t > 0.0:
-		_roll_step(dt, on_floor)
+		_roll_step(dt, on_floor, jump_pressed or buffer > 0.0)
 	elif on_floor:
 		_ground_step(dt, wish)
 	else:
@@ -754,6 +763,17 @@ func _air_step(dt: float, wish: Vector3, jump_held: bool) -> void:
 ## Mario-style chain: jump again within jump_combo_window of landing, while moving, to go higher.
 ## The third jump needs real speed (triple_min_speed). Any pause resets it to a single jump.
 func _ground_jump(n: Vector3) -> void:
+	if pound_land <= t.pound_jump_window:
+		# high jump out of a ground pound
+		pound_land = 99.0
+		velocity = velocity - n * velocity.dot(n) + n * t.jump_speed * t.pound_jump_mult * (t.small_jump_mult if small else 1.0)
+		global_position += n * 0.05
+		jumping = true
+		buffer = 0.0
+		coyote = 0.0
+		land_time = 99.0
+		jump_chain = 2 # it counts as the top of the chain
+		return
 	var chained := land_time <= t.jump_combo_window and flat_speed() > 2.0
 	if chained and jump_chain < 2:
 		jump_chain += 1
@@ -794,9 +814,10 @@ func _start_roll(wish: Vector3) -> void:
 			dir = side * signf(dir.dot(side))
 	roll_dir = dir
 	roll_t = t.roll_time
+	roll_speed_now = maxf(t.roll_speed, flat_speed() / _size_mult())
 	match roll_kind:
 		"roll":
-			velocity = dir * t.roll_speed * _size_mult()
+			velocity = dir * roll_speed_now * _size_mult()
 		"sidehop":
 			velocity = dir * t.roll_speed * _size_mult() * 0.8 + Vector3.UP * 5.0
 			global_position += Vector3.UP * 0.05
@@ -806,18 +827,35 @@ func _start_roll(wish: Vector3) -> void:
 			global_position += Vector3.UP * 0.05
 			air_lock = 0.1
 
-func _roll_step(dt: float, on_floor: bool) -> void:
+func _roll_step(dt: float, on_floor: bool, jump_pressed := false) -> void:
 	roll_t -= dt
+	if roll_kind == "roll" and jump_pressed and on_floor:
+		# long jump: out of a roll you fly forward, low and far
+		roll_t = 0.0
+		velocity = roll_dir * maxf(t.long_jump_speed, roll_speed_now) * _size_mult() + Vector3.UP * t.long_jump_up
+		global_position += Vector3.UP * 0.05
+		jumping = false
+		buffer = 0.0
+		air_lock = 0.1
+		land_time = 99.0
+		return
 	if roll_kind == "roll":
-		var v := roll_dir * t.roll_speed * _size_mult()
+		if on_floor:
+			# rolling keeps its speed, and downhill adds to it
+			var n := get_floor_normal()
+			if n != Vector3.ZERO:
+				var g := Vector3.DOWN * t.gravity
+				roll_speed_now = clampf(roll_speed_now + (g - n * g.dot(n)).dot(roll_dir) * t.slope_factor * dt, t.roll_speed * 0.5, t.boost_speed)
+		var v := roll_dir * roll_speed_now * _size_mult()
 		velocity.x = v.x
 		velocity.z = v.z
 		if not on_floor:
 			velocity.y -= t.gravity * dt
 		if roll_t <= 0.0:
 			# come out of the roll at running speed
-			velocity.x = roll_dir.x * minf(t.roll_speed * _size_mult(), t.top_speed)
-			velocity.z = roll_dir.z * minf(t.roll_speed * _size_mult(), t.top_speed)
+			var out := roll_speed_now if roll_speed_now > t.roll_speed else minf(t.roll_speed, t.top_speed)
+			velocity.x = roll_dir.x * out * _size_mult()
+			velocity.z = roll_dir.z * out * _size_mult()
 	else:
 		velocity.y -= t.gravity * dt
 		if (on_floor and roll_t < t.roll_time - 0.1) or roll_t <= -0.6:
@@ -1053,6 +1091,60 @@ func _hang_step(wish: Vector3, jump_pressed: bool) -> void:
 	elif into < -0.5:
 		velocity = hang_n * 2.0
 		hang = Vector3.ZERO
+
+func _can_pound() -> bool:
+	return pound_t < 0.0 and not hands_full() and homing == null and rail == null and hang == Vector3.ZERO \
+		and climbing == null and grapple_t <= 0.0 and not magnet_flying
+
+## Ground pound (context button in the air, hands empty): a short pause, then straight down at pound_speed.
+## - Onto a monster or spikes: it hits (2) and bounces you up, ready to pound or home in on the next.
+## - Onto flat ground: a shockwave hurts what's right around you, and jumping within pound_jump_window is a
+##   high jump. Holding a direction as you land rolls you out instead (jump out of the roll: long jump).
+## - Onto a slope: the fall turns into speed downhill.
+func _pound_step(dt: float, on_floor: bool, wish: Vector3) -> void:
+	pound_t += dt
+	jumping = false
+	roll_t = 0.0
+	if pound_t < t.pound_hover:
+		velocity = Vector3.ZERO
+		return
+	# something to bounce off right below?
+	for n in get_tree().get_nodes_in_group("hurtable") + get_tree().get_nodes_in_group("pogo"):
+		var node := n as Node3D
+		if node == self or node is CrackedWall:
+			continue
+		var d := node.global_position - global_position
+		if d.y < 0.2 and d.y > -(radius() + 1.2) and Vector2(d.x, d.z).length() < radius() + 0.7:
+			if node.is_in_group("hurtable"):
+				node.hurt(2, global_position)
+			Hitfx.hit(get_tree(), node.global_position, t, 1.4)
+			pound_t = -1.0
+			velocity = Vector3.UP * t.pogo_speed * 1.2
+			global_position.y = maxf(global_position.y, node.global_position.y + radius() + 0.6)
+			_pogo_last = node
+			air_lock = 0.1
+			jump_chain = 0
+			return
+	if on_floor and pound_t > t.pound_hover + 0.02:
+		pound_t = -1.0
+		var fall := t.pound_speed
+		var n := get_floor_normal()
+		Hitfx.shake(get_tree(), 0.25)
+		for h in get_tree().get_nodes_in_group("hurtable"):
+			var hn := h as Node3D
+			if hn != self and not (hn is CrackedWall) and hn.global_position.distance_to(global_position) < 2.2:
+				hn.hurt(1, global_position)
+		var down := Vector3.DOWN - n * Vector3.DOWN.dot(n)
+		if n.y < 0.97 and down.length() > 0.05:
+			velocity = down.normalized() * maxf(flat_speed(), fall * t.pound_slide)
+			return
+		velocity = Vector3.ZERO
+		if wish.length() > 0.5:
+			_start_roll(wish)
+			return
+		pound_land = 0.0
+		return
+	velocity = Vector3.DOWN * t.pound_speed
 
 ## Air attack: home in on the nearest thing to hit ahead of you (what you're locked on to comes first).
 ## Returns false if there's nothing in reach, and the spear does an air slash instead.

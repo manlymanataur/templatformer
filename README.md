@@ -25,6 +25,9 @@ Locally: open this folder in Godot 4.5 and press F5.
 | Perfect dodge | get hit during a roll's i-frames: no damage, and the world slows to 30% for 1.5 s while you don't | |
 | Climb | push into vines (or a trunk) to climb as high as they go; jump kicks off | |
 | Ledge grab | fall against a wall whose top is within 1.2 m above you: you hang. Push on or jump to pull up, pull away to drop. Iron is too smooth to grab | |
+| Ground pound | E in the air with empty hands: a pause, then straight down at 30 m/s. Onto a monster or spikes it hits and bounces you up (then home in on the next with attack, or pound again). Onto flat ground, jump right away for a 5.4 m high jump, or hold a direction to roll out. Onto a slope, the fall turns into downhill speed | |
+| Long jump | jump out of a roll: 18 m/s forward, about 11 m | |
+| Combos | a wall kick counts as the first jump of the chain; rolls keep their speed and gain it downhill; slopes give the speed a triple jump needs | |
 | Grind rail | land or walk onto a rail. Downhill speeds you up, uphill slows you; jump hops off | |
 | Spin attack | hold attack until the tip glows, then let go | |
 | Use quick item 1 / 2 / 3 | 1 / 2 / 3 | Y / LB / RB |
