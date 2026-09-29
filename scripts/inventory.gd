@@ -12,6 +12,8 @@ const ITEMS := {
 	# toggles: using one switches it on or off, nothing is used up
 	"candle": {"name": "Candle Hat", "color": Color(1.0, 0.75, 0.35), "slot": true, "max": 1, "toggle": true},
 	"umbra": {"name": "Umbra", "color": Color(0.45, 0.38, 1.0), "slot": true, "max": 1, "toggle": true},
+	# the magnet is always on: using it flips between pull (negative) and push (positive)
+	"magnet": {"name": "Magnet", "color": Color(0.3, 0.55, 1.0), "slot": true, "max": 1, "toggle": true},
 }
 const SLOTS := 3
 
@@ -63,6 +65,10 @@ func use(slot: int, player: Player) -> bool:
 			return true
 		"umbra":
 			player.toggle_umbra()
+			return true
+		"magnet":
+			player.magnet_push = not player.magnet_push
+			changed.emit()
 			return true
 		"potion":
 			if player.hp >= player.max_hp:

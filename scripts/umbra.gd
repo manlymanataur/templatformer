@@ -5,7 +5,9 @@ extends CharacterBody3D
 ## Walls stop it separately from you, so you can pin yourself against a wall and keep steering it.
 ## In the dark it floats, holding its height, and can drift out over a chasm. In light it goes limp:
 ## it drops to the ground and crawls slowly. Once light knocks it out of the air it falls all the way down,
-## even if it falls back into shadow. If it drops into a chasm it fades, and you can call it again.
+## even if it falls back into shadow.
+## It carries a greatsword and copies each of your spear moves (mirrored) while it's in the dark.
+## Lit, it's too limp to swing. If it drops into a chasm it fades, and you can call it again.
 
 var player: Player
 var t: Tuning
@@ -18,6 +20,15 @@ var _mat: StandardMaterial3D
 var _t := 0.0
 var _scale := Vector3.ONE
 var _dir := Vector3.FORWARD
+var swing_t := 0.0 ## time left in the current greatsword swing
+var swing_move := ""
+var _hit: Array = []
+var _sword: Node3D
+
+const SWING_TIME := 0.45
+const SWING_FROM := 0.08
+const SWING_TO := 0.32
+const SWING_DAMAGE := 2
 
 static func summon(p: Player) -> Umbra:
 	var u := Umbra.new()
@@ -28,6 +39,7 @@ static func summon(p: Player) -> Umbra:
 	p.get_parent().add_child(u)
 	u.global_position = p.global_position + u.mirror * 1.5
 	u.home_y = u.global_position.y
+	p.spear.move_started.connect(u.copy_attack)
 	return u
 
 func _ready() -> void:
@@ -75,6 +87,75 @@ func _ready() -> void:
 		e.material_override = eyes
 		e.position = Vector3(sx, 0.08, -0.34)
 		_vis.add_child(e)
+	_sword = Node3D.new()
+	add_child(_sword)
+	var blade := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.14, 0.05, 1.9)
+	blade.mesh = bm
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.55, 0.5, 0.85, 0.9)
+	steel.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	steel.emission_enabled = true
+	steel.emission = Color(0.5, 0.45, 1.0)
+	steel.emission_energy_multiplier = 0.8
+	blade.material_override = steel
+	blade.position = Vector3(0, 0, -1.25)
+	_sword.add_child(blade)
+	var guard := MeshInstance3D.new()
+	var gm := BoxMesh.new()
+	gm.size = Vector3(0.45, 0.07, 0.08)
+	guard.mesh = gm
+	guard.material_override = steel
+	guard.position = Vector3(0, 0, -0.3)
+	_sword.add_child(guard)
+
+## Umbra's mirror of the way you face.
+func facing() -> Vector3:
+	var f := mirrored(player._flat_facing())
+	return f.normalized() if f.length() > 0.01 else Vector3.FORWARD
+
+## Your spear started a move: swing the greatsword too, unless light has it limp.
+func copy_attack(move: String) -> void:
+	if lit:
+		return
+	swing_move = move
+	swing_t = SWING_TIME
+	_hit.clear()
+
+func _swing(dt: float) -> void:
+	var f := facing()
+	var base := Basis.looking_at(f, Vector3.UP)
+	if swing_t <= 0.0:
+		# at rest: held low at its side
+		_sword.basis = base * Basis(Vector3.UP, -0.9) * Basis(Vector3.RIGHT, -0.5)
+		_sword.position = Vector3(0, -0.1, 0)
+		return
+	swing_t -= dt
+	var k := 1.0 - swing_t / SWING_TIME
+	var yaw := k * TAU if swing_move == "spin" else lerpf(1.6, -1.6, k)
+	_sword.basis = base * Basis(Vector3.UP, yaw)
+	_sword.position = Vector3.ZERO
+	var t := SWING_TIME - swing_t
+	if t < SWING_FROM or t > SWING_TO:
+		return
+	var q := PhysicsShapeQueryParameters3D.new()
+	if swing_move == "spin":
+		var sph := SphereShape3D.new()
+		sph.radius = 2.8
+		q.shape = sph
+		q.transform = Transform3D(Basis(), global_position)
+	else:
+		var box := BoxShape3D.new()
+		box.size = Vector3(3.4, 1.6, 2.6)
+		q.shape = box
+		q.transform = Transform3D(base, global_position + f * 1.4)
+	q.exclude = [get_rid(), player.get_rid()]
+	for r in get_world_3d().direct_space_state.intersect_shape(q, 16):
+		var c = r["collider"]
+		if c != null and c != player and c.is_in_group("hurtable") and not _hit.has(c):
+			_hit.append(c)
+			c.hurt(SWING_DAMAGE, global_position)
 
 ## Your movement, mirrored across the mirror axis.
 func mirrored(v: Vector3) -> Vector3:
@@ -109,6 +190,9 @@ func _physics_process(dt: float) -> void:
 	_vis.basis = Basis.looking_at(_dir, Vector3.UP).scaled(_scale)
 	_vis.position.y = -0.2 if lit else sin(_t * 3.0) * 0.08
 	_mat.emission_energy_multiplier = 0.15 if lit else 0.6
+	if lit:
+		swing_t = 0.0 # light knocks the swing out of it
+	_swing(dt)
 
 func fade() -> void:
 	if player != null and player.umbra == self:

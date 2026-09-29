@@ -1,9 +1,11 @@
 class_name Gate
 extends StaticBody3D
 ## Bars across a doorway. open() drops them into the floor. Blocks light while closed.
+## A powered door (needs_power) is open exactly while power reaches it (see Power).
 
 var size := Vector3(4, 4, 0.4)
 var opened := false
+var needs_power := false
 var _mesh: MeshInstance3D
 var _shape: CollisionShape3D
 
@@ -37,4 +39,25 @@ func open() -> void:
 		return
 	opened = true
 	_shape.set_deferred("disabled", true)
-	create_tween().tween_property(_mesh, "position:y", -size.y + 0.05, 0.6)
+	create_tween().tween_property(_mesh, "position:y", -size.y + 0.05, 0.4)
+
+func close() -> void:
+	if not opened:
+		return
+	opened = false
+	_shape.set_deferred("disabled", false)
+	create_tween().tween_property(_mesh, "position:y", 0.0, 0.4)
+
+## Make this a powered door: it joins the power grid and opens only while powered.
+func wire() -> void:
+	needs_power = true
+	add_to_group("power_sink")
+
+func set_powered(on: bool) -> void:
+	if on:
+		open()
+	else:
+		close()
+
+func power_box() -> AABB:
+	return AABB(global_position - size / 2.0, size)

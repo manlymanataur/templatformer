@@ -6,7 +6,7 @@ const KEYS := {
 	"move_forward": [KEY_W, KEY_UP], "move_back": [KEY_S, KEY_DOWN],
 	"jump": [KEY_SPACE], "target": [KEY_SHIFT, KEY_Z],
 	"cam_left": [KEY_J], "cam_right": [KEY_L], "cam_up": [KEY_I], "cam_down": [KEY_K],
-	"respawn": [KEY_R], "attack": [KEY_F], "roll": [KEY_CTRL, KEY_C],
+	"respawn": [KEY_R], "attack": [KEY_F], "roll": [KEY_C],
 	"item_1": [KEY_1], "item_2": [KEY_2], "item_3": [KEY_3], "inventory": [KEY_ENTER],
 }
 const PAD_AXES := {

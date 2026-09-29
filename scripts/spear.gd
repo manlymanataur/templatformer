@@ -5,6 +5,10 @@ extends Node3D
 ##   Long slash: attack while running fast (not locked on). You lunge forward with a long reach.
 ##   Air slash: attack in the air. A downward cut in front of you.
 ##   Spin: hold attack until the tip glows, then let go. Hits all around you.
+## Wearing the lit candle hat sets the spear on fire: every move also sets alight whatever it sweeps
+## (grass, vines, braziers, ice). Umbra copies each move with its greatsword (move_started).
+
+signal move_started(move: String)
 
 const COMBO_WINDOW := 0.35 ## after a move ends, press again within this to continue the combo
 
@@ -29,6 +33,7 @@ var queued := false
 var _hit: Array = []
 var _shaft: Node3D
 var _tip_mat: StandardMaterial3D
+var _fire: MeshInstance3D
 
 func _ready() -> void:
 	_shaft = Node3D.new()
@@ -52,6 +57,10 @@ func _ready() -> void:
 	tip.rotation_degrees = Vector3(-90, 0, 0)
 	tip.position = Vector3(0, 0, -0.95)
 	_shaft.add_child(tip)
+	_fire = Burnable.flame_mesh(0.35)
+	_fire.position = Vector3(0, 0, -1.1)
+	_fire.rotation_degrees = Vector3(-90, 0, 0)
+	_shaft.add_child(_fire)
 	position = Vector3(0.35, 0.05, -0.2)
 
 ## Attack button pressed: pick the move from what you're doing.
@@ -78,6 +87,7 @@ func start(m: String) -> void:
 	busy = MOVES[m]["dur"]
 	queued = false
 	_hit.clear()
+	move_started.emit(m)
 	if m == "lunge":
 		var f := player._flat_facing()
 		player.velocity.x = f.x * 16.0
@@ -85,6 +95,7 @@ func start(m: String) -> void:
 
 func _physics_process(dt: float) -> void:
 	visible = player.inventory.has("spear")
+	_fire.visible = player.candle_lit
 	_tip_mat.emission_enabled = charged
 	_tip_mat.emission = Color(0.6, 0.8, 1.0) * 2.0
 	if busy <= 0.0:
@@ -108,6 +119,8 @@ func _physics_process(dt: float) -> void:
 	if t < def["from"] or t > def["to"]:
 		return
 	_hit_query(def)
+	if player.candle_lit:
+		_burn(def, dt)
 
 func _animate(k: float) -> void:
 	_shaft.position = Vector3.ZERO
@@ -124,6 +137,19 @@ func _animate(k: float) -> void:
 		"spin":
 			rotation.y = k * TAU
 			_shaft.position.z = -0.8
+
+## Fire along the move's reach: heat anything flammable the hit shape covers.
+func _burn(def: Dictionary, dt: float) -> void:
+	dt *= 4.0 # a strike is brief, so it heats hard: one hit catches vines, a few melt ice
+	if def.has("sphere"):
+		Lighting.spread_heat(player.global_position, def["sphere"], dt, player)
+	else:
+		var box: Vector3 = def["box"]
+		var fwd := player._flat_facing()
+		# a few points along the blade's reach, each warming what's within half the box width
+		for k in 3:
+			var p := player.global_position + fwd * (float(def["fwd"]) + (k - 1) * box.z / 3.0)
+			Lighting.spread_heat(p, box.x / 2.0, dt, player)
 
 func _hit_query(def: Dictionary) -> void:
 	var fwd := player._flat_facing()

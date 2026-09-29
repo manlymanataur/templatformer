@@ -95,28 +95,10 @@ func label(pos: Vector3, text: String, size := 64) -> void:
 	add_child(l)
 
 func boost_pad(pos: Vector3, dir: Vector3) -> void:
-	box(pos + Vector3(0, -0.49, 0), Vector3(4, 1, 3), Basis(), Color(1.0, 0.8, 0.2)) # flush with the floor
-	var a := Area3D.new()
-	var c := CollisionShape3D.new()
-	var s := BoxShape3D.new()
-	s.size = Vector3(4, 1.5, 3)
-	c.shape = s
-	a.add_child(c)
-	add_child(a)
-	a.global_position = pos + Vector3(0, 0.5, 0)
-	a.body_entered.connect(func(b): if b is Player: b.boost(dir))
+	Pad.make(self, "boost", pos, dir, Vector3(4, 1, 3))
 
 func launch_pad(pos: Vector3, v: Vector3) -> void:
-	box(pos + Vector3(0, -0.45, 0), Vector3(2.4, 1, 2.4), Basis(), Color(0.3, 0.9, 0.95))
-	var a := Area3D.new()
-	var c := CollisionShape3D.new()
-	var s := BoxShape3D.new()
-	s.size = Vector3(2.4, 1.0, 2.4)
-	c.shape = s
-	a.add_child(c)
-	add_child(a)
-	a.global_position = pos + Vector3(0, 0.5, 0)
-	a.body_entered.connect(func(b): if b is Player: b.launch(v))
+	Pad.make(self, "launch", pos, v, Vector3(2.4, 1, 2.4))
 
 ## Curved track: an arc of the circle with this centre, in the plane of fwd and up,
 ## from angle a0 to a1 (0 = bottom, 90 = far wall, 180 = top), drifting sideways by shift over a full turn.
@@ -233,4 +215,6 @@ func _build() -> void:
 		Monster.spawn(self, p)
 
 	ShadowHall.build(self)
+	LodestoneYard.build(self)
+	add_child(Power.new())
 	marks["targets"] = Vector3(-2, 0.6, 5)

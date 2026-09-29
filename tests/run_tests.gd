@@ -183,6 +183,7 @@ func _fresh_player(pos: Vector3) -> void:
 	p.attack_held_t = 0.0
 	p._tap_t = -1.0
 	p._roll_wish = Vector3.ZERO
+	p.magnet_push = false
 	if p.candle_lit:
 		p.set_candle(false)
 	if p.umbra != null:
@@ -312,6 +313,7 @@ func _combat_tests() -> void:
 
 	await _move_tests(arena)
 	await _hall_tests(arena)
+	await _yard_tests(arena)
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -645,14 +647,15 @@ func _hall_tests(arena: Vector3) -> void:
 	var candle_lit := Lighting.is_lit(spot, p)
 	check("lantern lights the chasm, your body shadows it, the candle doesn't", open_lit and shadowed and candle_lit,
 		"lit %s, in your shadow %s, with candle %s" % [open_lit, shadowed, candle_lit])
-	var dark_spot := Vector3(-4, 4.5, 87)
-	await _fresh_player(m["hall_b"])
+	var dark_spot := Vector3(-4, 4.5, 84)
+	var far_spot := Vector3(-4, 4.5, 92) # about 15 m away, same dark room, clear line
+	await _fresh_player(Vector3(0.8, 4.6, 78))
 	var dark := not Lighting.is_lit(dark_spot, p)
 	p.inventory.add("candle")
 	p.ai_item = p.inventory.slots.find("candle")
 	await frames(2)
 	var by_candle := Lighting.is_lit(dark_spot, p) and p.candle_lit
-	var out_of_reach := not Lighting.is_lit(dark_spot + Vector3(0, 0, t.candle_range + 1.0), p)
+	var out_of_reach := not Lighting.is_lit(far_spot, p)
 	check("candle hat lights %.0f m around you in the dark hall" % t.candle_range, dark and by_candle and out_of_reach,
 		"dark %s, lit by candle %s, dark past reach %s" % [dark, by_candle, out_of_reach])
 
@@ -741,3 +744,147 @@ func _hall_tests(arena: Vector3) -> void:
 	check("off the lantern's line Umbra falls", fell, "fell %s" % fell)
 	check("in your shadow Umbra crosses the lit chasm and opens the gate", p.umbra != null and gate_c.opened,
 		"Umbra out %s, gate open %s" % [p.umbra != null, gate_c.opened])
+
+
+func _yard_tests(arena: Vector3) -> void:
+	var t: Tuning = level.t
+	var m: Dictionary = level.marks
+	var mon: Monster
+
+	# 43. Magnet: iron moves only when you're at its side, only the nearest in a line, one cell at a time
+	await _fresh_player(arena)
+	var a := IronCube.make(level, Vector3(arena.x, 0, arena.z - 8)) # in your column, 8 m north
+	var b := IronCube.make(level, Vector3(arena.x, 0, arena.z - 14)) # behind it, shielded
+	var d := IronCube.make(level, Vector3(arena.x + 4, 0, arena.z - 4)) # diagonal
+	await frames(3) # let the new blocks register with physics before the magnet looks for them
+	p.inventory.add("magnet")
+	await frames(100)
+	var az := a.global_position.z - arena.z
+	var bz := b.global_position.z - arena.z
+	var dmoved := d.global_position.distance_to(Vector3(arena.x + 4, 0, arena.z - 4))
+	check("pull draws the nearest iron in line until it's beside you", absf(az + 2.0) < 0.05, "stopped %.1f m away" % -az)
+	check("iron behind other iron is shielded", absf(bz + 14.0) < 0.05, "moved to %.1f" % bz)
+	check("diagonal iron doesn't move", dmoved < 0.05, "moved %.2f m" % dmoved)
+	p.inventory.slots[0] = "magnet"
+	p.ai_item = 0
+	await frames(120)
+	az = a.global_position.z - arena.z
+	check("push drives it away until something blocks it", p.magnet_push and absf(az + 12.0) < 0.05, "now %.1f m away" % -az)
+	for c in [a, b, d]:
+		c.queue_free()
+
+	# 44. Power: iron between battery and door opens it; take it away and the door shuts
+	var door: Gate = m["yard_door"]
+	var iron_a: IronCube = m["yard_iron_a"]
+	var closed_first := not door.opened
+	await _fresh_player(m["yard_pull_a"])
+	p.inventory.add("magnet")
+	for i in 150:
+		await physics_frame
+	var in_gap := iron_a.global_position.distance_to(LodestoneYard.cell(2, 6)) < 0.05
+	check("pulled iron stops in the gap and powers the door", closed_first and in_gap and door.opened and iron_a.powered,
+		"door shut at first %s, iron in gap %s, door open %s" % [closed_first, in_gap, door.opened])
+	p.magnet_push = true
+	await frames(60)
+	check("pushing the iron away cuts the power and shuts the door", not door.opened, "door open %s" % door.opened)
+
+	# 45. Dead launch pad does nothing; push iron against it and its battery and it launches you onto the 6 m block
+	var pad: Pad = m["yard_launch"]
+	await _fresh_player(LodestoneYard.cell(7, 3) + Vector3.UP * 0.6)
+	await frames(40)
+	var dead_ok := p.global_position.y < 1.0 and not pad.powered
+	await _fresh_player(m["yard_push_b"])
+	p.inventory.add("magnet")
+	p.magnet_push = true
+	await frames(120)
+	var iron_b: IronCube = m["yard_iron_b"]
+	var b_at := iron_b.global_position.distance_to(LodestoneYard.cell(8, 3)) < 0.05
+	await _fresh_player(LodestoneYard.cell(7, 6) + Vector3.UP * 0.6) # walk north onto the pad
+	p.ai_move = Vector2(0, -1)
+	var hi := 0.0
+	for i in 150:
+		await physics_frame
+		hi = maxf(hi, p.global_position.y)
+		if p.global_position.y > 1.0:
+			p.ai_move = Vector2.ZERO # the pad does the rest
+	p.ai_move = Vector2.ZERO
+	check("dead launch pad does nothing", dead_ok, "y %.1f" % p.global_position.y)
+	check("pushed iron powers the pad and it launches you onto the 6 m block", b_at and pad.powered and p.global_position.y > 6.0,
+		"iron in place %s, powered %s, peak %.1f, ended y %.1f" % [b_at, pad.powered, hi, p.global_position.y])
+
+	# 46. Boost: a running jump off the kicker can't clear the 14 m gap to the ledge; the booster can
+	var ledge: float = m["yard_ledge_y"]
+	var lip: float = m["yard_kicker_lip"]
+	await _fresh_player(Vector3(75.5, 0.6, -6.5)) # the dead pad; start at full running speed, the best a run-up gives
+	p.velocity = Vector3(0, 0, -t.top_speed)
+	p.ai_move = Vector2(0, -1)
+	for i in 240:
+		await physics_frame
+		if p.global_position.z < lip + 0.6 and not p.ai_jump:
+			p.ai_jump = true
+	p.ai_move = Vector2.ZERO
+	p.ai_jump = false
+	var reached := p.global_position.z
+	check("a full-speed jump off the kicker falls short of the ledge", p.global_position.y < ledge - 0.5 and reached < lip,
+		"ended y %.1f z %.1f" % [p.global_position.y, reached])
+	var boost: Pad = m["yard_boost"]
+	await _fresh_player(m["yard_boost_stand"])
+	p.inventory.add("magnet")
+	var fired := false
+	hi = 0.0
+	for i in 300:
+		await physics_frame
+		if boost.powered and not fired:
+			fired = true
+			p.ai_move = Vector2(0, -1)
+		hi = maxf(hi, p.global_position.y)
+		if fired and p.global_position.z < lip - 14.0 and p.is_on_floor():
+			p.ai_move = Vector2.ZERO # landed: stop before running off the far end
+	p.ai_move = Vector2.ZERO
+	check("pulled iron powers the booster and it fires you across to the ledge", fired and p.global_position.y > ledge,
+		"powered %s, peak %.1f, ended y %.1f" % [fired, hi, p.global_position.y])
+
+	# 47. Umbra copies your attacks with its greatsword in the dark, not in light
+	await _fresh_player(Vector3(6, 4.6, 88))
+	p.inventory.add("spear")
+	var u := _summon_facing_north()
+	mon = Monster.spawn(level, u.global_position + Vector3(0, 0.2, -1.4))
+	mon.drop_heart = false
+	mon.home = mon.global_position
+	mon.stun = 60.0
+	await frames(5)
+	var hp0 := mon.hp
+	p.ai_attack = true
+	await frames(30)
+	var dark_hit := hp0 - mon.hp
+	mon.queue_free()
+	await _fresh_player(arena)
+	p.inventory.add("spear")
+	u = _summon_facing_north()
+	mon = Monster.spawn(level, u.global_position + Vector3(0, 0.2, -1.4))
+	mon.drop_heart = false
+	mon.home = mon.global_position
+	mon.stun = 60.0
+	await frames(5)
+	hp0 = mon.hp
+	p.ai_attack = true
+	await frames(30)
+	var lit_hit := hp0 - mon.hp
+	mon.queue_free()
+	check("in the dark Umbra's greatsword copies your attack", dark_hit == Umbra.SWING_DAMAGE, "did %d damage" % dark_hit)
+	check("in light Umbra doesn't swing", lit_hit == 0, "did %d damage" % lit_hit)
+
+	# 48. With the candle hat on, your attacks are on fire
+	var burned := []
+	for lit in [false, true]:
+		await _fresh_player(arena)
+		p.inventory.add("spear")
+		var grass := Burnable.make(level, "grass", arena + Vector3(0, -0.6, -1.8), Vector3(2, 0.3, 2))
+		if lit:
+			p.set_candle(true)
+		await frames(3)
+		p.ai_attack = true
+		await frames(20)
+		burned.append(grass.burning or grass.burnt)
+		grass.queue_free()
+	check("attacks set grass alight only while you wear the candle", burned == [false, true], "without %s, with %s" % [burned[0], burned[1]])
