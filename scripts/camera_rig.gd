@@ -42,9 +42,11 @@ func _physics_process(dt: float) -> void:
 		idle = 0.0
 	else:
 		idle += dt
-	zoom = lerpf(zoom, t.small_scale * 1.6 if player.small else 1.0, clampf(4.0 * dt, 0.0, 1.0)) # pull in close when you're small
-	global_position = global_position.lerp(player.global_position + Vector3.UP * zoom, clampf(t.cam_lag * dt, 0.0, 1.0))
-	var hv := Vector3(player.velocity.x, 0, player.velocity.z)
+	var small := player.small or player.pilot != null # pull in close when you're small or steering the spider
+	zoom = lerpf(zoom, t.small_scale * 1.6 if small else 1.0, clampf(4.0 * dt, 0.0, 1.0))
+	var f := player.focus() as CharacterBody3D
+	global_position = global_position.lerp(f.global_position + Vector3.UP * zoom, clampf(t.cam_lag * dt, 0.0, 1.0))
+	var hv := Vector3(f.velocity.x, 0, f.velocity.z)
 	if player.target != null:
 		var d := player.target.global_position - player.global_position
 		yaw = lerp_angle(yaw, atan2(-d.x, -d.z), clampf(8.0 * dt, 0.0, 1.0))

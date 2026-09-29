@@ -14,6 +14,10 @@ const ITEMS := {
 	"umbra": {"name": "Umbra", "color": Color(0.45, 0.38, 1.0), "slot": true, "max": 1, "toggle": true},
 	# the magnet is always on: using it flips between pull (negative) and push (positive)
 	"magnet": {"name": "Magnet", "color": Color(0.3, 0.55, 1.0), "slot": true, "max": 1, "toggle": true},
+	# the clockwork spider: send it out and steer it; hooked with the lash, it's the anchor of a leash
+	"spider": {"name": "Clockwork Spider", "color": Color(0.6, 0.55, 0.5), "slot": true, "max": 1, "toggle": true},
+	# Winch's leash and Propagule's lash in one rope
+	"lash": {"name": "Lash", "color": Color(0.85, 0.7, 0.4), "slot": true, "max": 1, "toggle": true},
 }
 const SLOTS := 3
 
@@ -68,6 +72,14 @@ func use(slot: int, player: Player) -> bool:
 			return true
 		"magnet":
 			player.magnet_push = not player.magnet_push
+			changed.emit()
+			return true
+		"spider":
+			player.use_spider()
+			changed.emit()
+			return true
+		"lash":
+			player.use_lash()
 			changed.emit()
 			return true
 		"potion":

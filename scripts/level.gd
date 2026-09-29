@@ -259,5 +259,6 @@ func _build() -> void:
 	ShadowHall.build(self)
 	LodestoneYard.build(self)
 	ScaleGarden.build(self)
+	Rootworks.build(self)
 	add_child(Power.new())
 	marks["targets"] = Vector3(-2, 0.6, 5)

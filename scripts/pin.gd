@@ -65,6 +65,8 @@ static func apply(p: Player, d: Dictionary, rig: CameraRig = null) -> bool:
 		p.carrying = null
 	if p.umbra != null:
 		p.umbra.fade()
+	p.drop_holds()
+	p.stow_spider()
 	p.set_candle(bool(d.get("candle", false)) and inv.has("candle"))
 	p.magnet_push = bool(d.get("push", false))
 	p.set_small(bool(d.get("small", false)), true)

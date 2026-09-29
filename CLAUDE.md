@@ -41,6 +41,11 @@
   - O loads a pasted pin. The web build loads `#pin=` from the address on start; desktop takes `-- --pin=CODE`.
   - `Pin` (`scripts/pin.gd`) captures and restores position, facing, camera, size, magnet, hearts, items and slots. A code is URL-safe base64 JSON, so decode it (`base64 -d` after swapping `-_` for `+/`) to read jovi's note and spot, and start a test there.
 - `scripts/level_rules.gd` checks built areas (`LevelRules.AREAS`) against the level feel rules: ledges under 2 m, gaps under 6 m, 10-12 m gaps without a 12 m runway or a pad nearby, and 3 m ledges as the norm. The first tests run it on every area. Add each new wing's box to `AREAS`, and stop a roofed wing's box under its roof.
+- Rootworks (`scripts/rootworks.gd`, marks start with `root_`) holds Winch and Propagule:
+  - `Seed` (Propagule): carry one (hands full: no spear, no lash), plant it on soil, mud or roots (groups `soil`, `mud`, `roots`), or drop it `spear_drop` onto mud. Planted, it grows a trunk (groups `trunks`, `climbable`, `lash_posts`) and grid-axis roots until blocked. Attack next to a trunk uproots it. There is no glide (jovi).
+  - The Lash item (`Player.use_lash`) is Winch's leash plus Propagule's lash. It grapples to `lash_posts`, fetches loose seeds, stings hurtables, and hooks the spider as a leash.
+  - The Clockwork Spider (`Spider`): piloting it, the player sits still (Winch's dog) and inputs go to `Spider.wish`. Lashed, the spider is the dog and the player walks.
+  - `Tether` is Winch's rope for both: it follows the walker's path, reels in on backtracking, stops (`tows = false`) or tows the anchor at `max_len`, and turns every `Gear` it slides past. `Gear` drives a lift by `gear_ratio` and keeps its angle.
 - `scripts/game_hud.gd` draws the hearts, the quick slots and the pause inventory (Enter). It runs while the game is paused.
 - jovi dropped loops (2026-09-29). Don't bring them back without asking.
 
