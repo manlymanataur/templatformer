@@ -37,6 +37,7 @@ const WARPS := [
 	["Moves: pogo spikes", "moves_pogo"],
 	["Moves: ledge grab", "moves_ledge"],
 	["Challenge room doors", "challenge_doors"],
+	["Test colossus", "colossus_arena"],
 ]
 const SHOWN := 12 ## rows the menu shows at once
 const ACTIONS := ["Give every item", "God mode", "Heal", "Shrink / grow"]

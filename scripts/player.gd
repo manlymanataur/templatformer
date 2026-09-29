@@ -1134,6 +1134,9 @@ func _pound_step(dt: float, on_floor: bool, wish: Vector3) -> void:
 			var hn := h as Node3D
 			if hn != self and not (hn is CrackedWall) and hn.global_position.distance_to(global_position) < 2.2:
 				hn.hurt(1, global_position)
+		for pn in get_tree().get_nodes_in_group("poundable"): # things only a pound cracks (a colossus's back plate)
+			if (pn as Node3D).global_position.distance_to(global_position) < 2.5:
+				(pn.get_meta("on_pound") as Callable).call()
 		var down := Vector3.DOWN - n * Vector3.DOWN.dot(n)
 		if n.y < 0.97 and down.length() > 0.05:
 			velocity = down.normalized() * maxf(flat_speed(), fall * t.pound_slide)
