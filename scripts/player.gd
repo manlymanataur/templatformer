@@ -5,7 +5,10 @@ extends CharacterBody3D
 ## Jumps chain Mario-style: land and jump again quickly, while moving, for a higher double and triple jump.
 ## Push into a wall while falling to slide down it, press jump to kick off it.
 ## Roll to dodge (brief invincibility). While holding target: locked onto a target you circle it,
-## with nothing to lock you strafe facing one way; rolling sideways or back becomes a side hop or backflip.
+## with nothing to lock you strafe facing one way; a quick tap of the stick (or the roll button) dodges:
+## forward rolls, sideways side hops, back backflips.
+## The candle hat (a quick-slot item) makes you a light source and sets fire to what you touch.
+## While you aren't giving off light, your body blocks light like any solid thing: see Lighting.
 ## Health is counted in half hearts; getting hurt gives knockback and a second of invincibility.
 
 var t: Tuning
@@ -54,6 +57,15 @@ var inventory := Inventory.new()
 var spear: Spear
 var carrying: Bomb = null
 var attack_held_t := 0.0
+var candle_lit := false ## wearing the lit candle hat
+var umbra: Umbra = null
+var last_wish := Vector3.ZERO ## this frame's movement input, which Umbra mirrors
+var _tap_t := -1.0 ## how long the stick has been out of neutral in the current tap, -1 when not tapping
+var _tap_dir := Vector3.ZERO
+var _prev_wish_len := 0.0
+var _roll_wish := Vector3.ZERO ## direction of a tap dodge waiting to start
+var _hat: Node3D
+var _candle_light: OmniLight3D
 
 func _ready() -> void:
 	add_to_group("player")
@@ -87,6 +99,37 @@ func _ready() -> void:
 	spear = Spear.new()
 	spear.player = self
 	visual.add_child(spear)
+	add_to_group("light_sources")
+	_hat = Node3D.new()
+	_hat.position = Vector3(0, 0.45, 0)
+	_hat.visible = false
+	visual.add_child(_hat)
+	var brim := MeshInstance3D.new()
+	var brm := CylinderMesh.new()
+	brm.top_radius = 0.32
+	brm.bottom_radius = 0.32
+	brm.height = 0.05
+	brim.mesh = brm
+	brim.material_override = _mat(Color(0.35, 0.25, 0.2))
+	_hat.add_child(brim)
+	var wax := MeshInstance3D.new()
+	var wm := CylinderMesh.new()
+	wm.top_radius = 0.09
+	wm.bottom_radius = 0.1
+	wm.height = 0.35
+	wax.mesh = wm
+	wax.material_override = _mat(Color(0.95, 0.92, 0.82))
+	wax.position.y = 0.2
+	_hat.add_child(wax)
+	var flame := Burnable.flame_mesh(0.25)
+	flame.position.y = 0.5
+	_hat.add_child(flame)
+	_candle_light = OmniLight3D.new()
+	_candle_light.light_color = Color(1.0, 0.75, 0.45)
+	_candle_light.light_energy = 1.4
+	_candle_light.position = Vector3(0, 1.0, 0)
+	_candle_light.visible = false
+	add_child(_candle_light)
 
 func _mat(c: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -111,6 +154,38 @@ func launch(v: Vector3) -> void:
 	roll_t = 0.0
 	air_lock = 0.15
 	global_position += Vector3.UP * 0.1
+
+## Candle hat: wearing it lit makes you a light source (and fire). Returns the new state.
+func set_candle(on: bool) -> void:
+	candle_lit = on
+	_hat.visible = on
+	_candle_light.visible = on
+	_candle_light.omni_range = t.candle_range
+	inventory.changed.emit()
+
+## Umbra: call the ghost beside you, or send it away if it's already out.
+func toggle_umbra() -> void:
+	if umbra != null:
+		umbra.fade()
+	else:
+		umbra = Umbra.summon(self)
+	inventory.changed.emit()
+
+func item_active(id: String) -> bool:
+	match id:
+		"candle":
+			return candle_lit
+		"umbra":
+			return umbra != null
+	return false
+
+# light source (see Lighting)
+func is_shining() -> bool:
+	return candle_lit
+func light_origin() -> Vector3:
+	return global_position + Vector3.UP * 1.0
+func light_reach() -> float:
+	return t.candle_range
 
 func dodging() -> bool:
 	return roll_t > 0.0 and (t.roll_time - roll_t) < t.roll_invuln
@@ -232,6 +307,10 @@ func _physics_process(dt: float) -> void:
 		lock_dir = _flat_facing()
 
 	var wish := _wish()
+	last_wish = wish
+	if candle_lit:
+		Lighting.spread_heat(global_position, t.candle_touch, dt, self)
+	_read_tap(dt, wish)
 	buffer = t.jump_buffer if jump_pressed else maxf(buffer - dt, 0.0)
 	var on_floor := is_on_floor() and air_lock <= 0.0
 	if on_floor and not _was_on_floor:
@@ -242,7 +321,8 @@ func _physics_process(dt: float) -> void:
 	roll_buffer = t.jump_buffer if roll_pressed else maxf(roll_buffer - dt, 0.0)
 	if roll_buffer > 0.0 and roll_t <= 0.0 and on_floor and carrying == null:
 		roll_buffer = 0.0
-		_start_roll(wish)
+		_start_roll(_roll_wish if _roll_wish != Vector3.ZERO else wish)
+		_roll_wish = Vector3.ZERO
 
 	if roll_t > 0.0:
 		_roll_step(dt, on_floor)
@@ -257,6 +337,23 @@ func _physics_process(dt: float) -> void:
 		respawn()
 	_update_visual(dt)
 	visual.visible = invuln <= 0.0 or fmod(invuln, 0.15) < 0.09
+
+## Locked on, a quick tap of the stick (out of neutral and back within dodge_tap_time) dodges that way.
+## Holding the stick longer just strafes or circles.
+func _read_tap(dt: float, wish: Vector3) -> void:
+	var m := wish.length()
+	if m >= 0.5:
+		if _tap_t < 0.0 and _prev_wish_len < 0.3:
+			_tap_t = 0.0
+		if _tap_t >= 0.0:
+			_tap_t += dt
+			_tap_dir = wish
+	elif m < 0.3:
+		if target_held and _tap_t >= 0.0 and _tap_t <= t.dodge_tap_time:
+			roll_buffer = t.jump_buffer
+			_roll_wish = _tap_dir
+		_tap_t = -1.0
+	_prev_wish_len = m
 
 func _ground_step(dt: float, wish: Vector3) -> void:
 	coyote = t.coyote_time

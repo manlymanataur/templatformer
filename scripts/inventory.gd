@@ -9,6 +9,9 @@ const ITEMS := {
 	"spear": {"name": "Spear", "color": Color(0.85, 0.75, 0.45), "slot": false, "max": 1},
 	"bombs": {"name": "Bombs", "color": Color(0.25, 0.25, 0.3), "slot": true, "max": 20},
 	"potion": {"name": "Red Potion", "color": Color(0.9, 0.2, 0.2), "slot": true, "max": 3},
+	# toggles: using one switches it on or off, nothing is used up
+	"candle": {"name": "Candle Hat", "color": Color(1.0, 0.75, 0.35), "slot": true, "max": 1, "toggle": true},
+	"umbra": {"name": "Umbra", "color": Color(0.45, 0.38, 1.0), "slot": true, "max": 1, "toggle": true},
 }
 const SLOTS := 3
 
@@ -55,6 +58,12 @@ func use(slot: int, player: Player) -> bool:
 	if id == "" or count(id) <= 0:
 		return false
 	match id:
+		"candle":
+			player.set_candle(not player.candle_lit)
+			return true
+		"umbra":
+			player.toggle_umbra()
+			return true
 		"potion":
 			if player.hp >= player.max_hp:
 				return false

@@ -181,6 +181,12 @@ func _fresh_player(pos: Vector3) -> void:
 	p.spear.busy = 0.0
 	p.spear.combo_step = 0
 	p.attack_held_t = 0.0
+	p._tap_t = -1.0
+	p._roll_wish = Vector3.ZERO
+	if p.candle_lit:
+		p.set_candle(false)
+	if p.umbra != null:
+		p.umbra.fade()
 
 func _monster_ahead(dist: float) -> Monster:
 	var mon := Monster.spawn(level, p.global_position + Vector3(0, 0.2, -dist))
@@ -305,6 +311,7 @@ func _combat_tests() -> void:
 	mon.queue_free()
 
 	await _move_tests(arena)
+	await _hall_tests(arena)
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -583,3 +590,154 @@ func _move_tests(arena: Vector3) -> void:
 			p.ai_move = Vector2.ZERO
 	check("launch pad throws you onto the far platform", p.global_position.y > 1.0 and p.global_position.z < -54.0,
 		"ended y %.1f z %.1f" % [p.global_position.y, p.global_position.z])
+
+
+## Call Umbra with the camera facing +Z (the way into the hall), so its mirror line is the X axis.
+func _summon_facing_north() -> Umbra:
+	p.cam_basis = Basis(Vector3.UP, PI)
+	p.toggle_umbra()
+	return p.umbra
+
+func _hall_tests(arena: Vector3) -> void:
+	var t: Tuning = level.t
+	var m: Dictionary = level.marks
+	var mon: Monster
+
+	# 35. Locked on, a quick tap of the stick dodges; holding it just strafes
+	mon = await _monster_ahead(6.0)
+	mon.stun = 60.0
+	p.ai_target = true
+	await frames(10)
+	var f := p._flat_facing()
+	var side := f.cross(Vector3.UP)
+	var kinds := []
+	for k in 3:
+		f = p._flat_facing() # taps are read relative to where you face, like a stick relative to the camera
+		side = f.cross(Vector3.UP)
+		var dir: Vector3 = [side, -f, f][k]
+		p.ai_move = Vector2(dir.x, dir.z)
+		await frames(5)
+		p.ai_move = Vector2.ZERO
+		await frames(4)
+		kinds.append(p.roll_kind if p.roll_t > 0.0 else "none")
+		await frames(50)
+	check("tap dodges: side hop, backflip, roll", kinds == ["sidehop", "backflip", "roll"], str(kinds))
+	var dodged := false
+	p.ai_move = Vector2(side.x, side.z)
+	for i in 40:
+		await physics_frame
+		dodged = dodged or p.roll_t > 0.0
+	p.ai_move = Vector2.ZERO
+	for i in 20:
+		await physics_frame
+		dodged = dodged or p.roll_t > 0.0
+	check("holding the stick strafes without dodging", not dodged, "dodged %s" % dodged)
+	p.ai_target = false
+	mon.queue_free()
+
+	# 36. Light: the lantern lights its chasm, your body shadows it, and wearing the candle you shine instead
+	var spot := Vector3(-3, 4.5, 106)
+	await _fresh_player(m["hall_c"] + Vector3(0, 0, -4))
+	var open_lit := Lighting.is_lit(spot, p)
+	await _fresh_player(Vector3(3, 4.6, 106))
+	var shadowed := not Lighting.is_lit(spot, p)
+	p.set_candle(true)
+	var candle_lit := Lighting.is_lit(spot, p)
+	check("lantern lights the chasm, your body shadows it, the candle doesn't", open_lit and shadowed and candle_lit,
+		"lit %s, in your shadow %s, with candle %s" % [open_lit, shadowed, candle_lit])
+	var dark_spot := Vector3(-4, 4.5, 87)
+	await _fresh_player(m["hall_b"])
+	var dark := not Lighting.is_lit(dark_spot, p)
+	p.inventory.add("candle")
+	p.ai_item = p.inventory.slots.find("candle")
+	await frames(2)
+	var by_candle := Lighting.is_lit(dark_spot, p) and p.candle_lit
+	var out_of_reach := not Lighting.is_lit(dark_spot + Vector3(0, 0, t.candle_range + 1.0), p)
+	check("candle hat lights %.0f m around you in the dark hall" % t.candle_range, dark and by_candle and out_of_reach,
+		"dark %s, lit by candle %s, dark past reach %s" % [dark, by_candle, out_of_reach])
+
+	# 37. The candle burns the vine wall; without it you're stuck
+	var vines: float = m["hall_vines"]
+	await _fresh_player(m["hall_a"])
+	p.ai_move = Vector2(0, 1)
+	await frames(60)
+	var stuck := p.global_position.z < vines
+	p.set_candle(true)
+	await frames(150)
+	p.ai_move = Vector2.ZERO
+	check("candle burns through the vine wall", stuck and p.global_position.z > vines + 1.0, "stuck without %s, got to z %.1f" % [stuck, p.global_position.z])
+
+	# 38. Grass fire spreads, melts the ice round the brazier and lights it, which opens the gate
+	await frames(300)
+	var gate_a: Gate = m["hall_a_gate"]
+	var far := 0
+	for g in get_nodes_in_group("flammable"):
+		if g is Burnable and g.kind == "grass" and g.burnt:
+			far += 1
+	check("grass fire spreads, melts the ice, lights the brazier, opens the gate", far == 12 and gate_a.opened, "%d of 12 patches burnt, gate open %s" % [far, gate_a.opened])
+
+	# 39. Umbra floats over the dark chasm, mirrored, to the moon plate
+	await _fresh_player(m["hall_b"])
+	var u := _summon_facing_north()
+	var ux0 := u.global_position.x
+	var y_start := u.global_position.y
+	var low := y_start
+	p.ai_move = Vector2(1, 0)
+	for i in 120:
+		await physics_frame
+		if is_instance_valid(u):
+			low = minf(low, u.global_position.y)
+	p.ai_move = Vector2.ZERO
+	var gate_b: Gate = m["hall_b_gate"]
+	var ok := is_instance_valid(u) and u.global_position.x < ux0 - 8.0
+	check("walking +X sends Umbra -X across the dark chasm", ok and y_start - low < 0.1, "Umbra x %.1f, dipped %.2f m" % [u.global_position.x if ok else 0.0, y_start - low])
+	check("Umbra on the moon plate opens the gate", gate_b.opened, "open %s" % gate_b.opened)
+	await _fresh_player(m["hall_b"])
+	u = _summon_facing_north()
+	p.ai_move = Vector2(0, 1)
+	await frames(12)
+	p.ai_move = Vector2.ZERO
+	var dz: float = u.global_position.z - (m["hall_b"] as Vector3).z
+	check("walking +Z moves Umbra +Z too", dz > 0.8, "Umbra moved %.1f m" % dz)
+
+	# 40. Light makes Umbra fall: over the chasm, putting the candle on drops it and it fades
+	await _fresh_player(m["hall_b"])
+	u = _summon_facing_north()
+	p.ai_move = Vector2(1, 0)
+	await frames(12)
+	p.ai_move = Vector2.ZERO
+	var over := u.global_position.x < -1.5
+	p.set_candle(true)
+	await frames(45)
+	check("candle light drops Umbra into the chasm", over and p.umbra == null, "was over chasm %s, still out %s" % [over, p.umbra != null])
+
+	# 41. In light Umbra crawls
+	await _fresh_player(arena)
+	u = _summon_facing_north()
+	p.ai_move = Vector2(0, 1)
+	await frames(30)
+	var crawl := Vector2(u.velocity.x, u.velocity.z).length()
+	var on_ground := u.is_on_floor()
+	p.ai_move = Vector2.ZERO
+	check("in sunlight Umbra crawls on the ground", u.lit and on_ground and crawl <= t.umbra_crawl_speed + 0.1, "lit %s, on ground %s, %.1f m/s" % [u.lit, on_ground, crawl])
+
+	# 42. Across the lit chasm Umbra only floats inside your shadow
+	var gate_c: Gate = m["hall_c_gate"]
+	await _fresh_player(m["hall_c"] + Vector3(0, 0, -3.0)) # well off the lantern's line
+	u = _summon_facing_north()
+	p.ai_move = Vector2(1, 0)
+	for i in 90:
+		await physics_frame
+	p.ai_move = Vector2.ZERO
+	var fell := p.umbra == null
+	await _fresh_player(m["hall_c"]) # on the line: your body shades it all the way
+	u = _summon_facing_north()
+	p.ai_move = Vector2(1, 0)
+	for i in 150:
+		await physics_frame
+		if p.umbra == null:
+			break
+	p.ai_move = Vector2.ZERO
+	check("off the lantern's line Umbra falls", fell, "fell %s" % fell)
+	check("in your shadow Umbra crosses the lit chasm and opens the gate", p.umbra != null and gate_c.opened,
+		"Umbra out %s, gate open %s" % [p.umbra != null, gate_c.opened])
