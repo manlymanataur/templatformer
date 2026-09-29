@@ -82,7 +82,9 @@ func _refresh() -> void:
 	for i in Inventory.SLOTS:
 		var id := inv.slots[i]
 		var text := "%d\n" % (i + 1)
-		if id != "":
+		if id != "" and Inventory.ITEMS[id].get("toggle", false):
+			text += Inventory.ITEMS[id]["name"] + (" (on)" if player.item_active(id) else "")
+		elif id != "":
 			text += "%s ×%d" % [Inventory.ITEMS[id]["name"], inv.count(id)]
 		else:
 			text += "—"

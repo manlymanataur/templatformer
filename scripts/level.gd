@@ -65,6 +65,7 @@ func _environment() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-55, -30, 0)
 	sun.shadow_enabled = true
+	sun.add_to_group("sun") # the sun counts as light for Umbra (see Lighting)
 	add_child(sun)
 
 func box(pos: Vector3, size: Vector3, basis_: Basis, color: Color) -> StaticBody3D:
@@ -84,10 +85,10 @@ func box(pos: Vector3, size: Vector3, basis_: Basis, color: Color) -> StaticBody
 	b.global_transform = Transform3D(basis_, pos)
 	return b
 
-func label(pos: Vector3, text: String) -> void:
+func label(pos: Vector3, text: String, size := 64) -> void:
 	var l := Label3D.new()
 	l.text = text
-	l.font_size = 64
+	l.font_size = size
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.outline_size = 12
 	l.position = pos
@@ -230,4 +231,6 @@ func _build() -> void:
 	label(Vector3(34, 3, 28), "monsters")
 	for p in [Vector3(30, 1, 40), Vector3(38, 1, 36), Vector3(36, 1, 45)]:
 		Monster.spawn(self, p)
+
+	ShadowHall.build(self)
 	marks["targets"] = Vector3(-2, 0.6, 5)
