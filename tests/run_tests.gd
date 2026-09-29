@@ -46,6 +46,7 @@ func _run() -> void:
 	for pk in get_nodes_in_group("pickups"):
 		pk.queue_free()
 	await frames(5)
+	await _rules_tests() # first, before any test moves iron or opens gates
 
 	# 1. Standing jump height matches jump_speed^2 / 2g
 	await place(Vector3(0, 0.6, 5))
@@ -318,6 +319,7 @@ func _combat_tests() -> void:
 	await _hall_tests(arena)
 	await _yard_tests(arena)
 	await _scale_tests(arena)
+	await _tool_tests(arena)
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -1176,3 +1178,77 @@ func _scale_tests(arena: Vector3) -> void:
 		fastest = maxf(fastest, p.velocity.length())
 	p.ai_move = Vector2.ZERO
 	check("running down the 30° ramp builds speed past top speed", fastest > t.top_speed + 4.0, "fastest %.1f m/s" % fastest)
+
+## The level rule checker: the real wings pass, and a room built to break every rule is caught.
+func _rules_tests() -> void:
+	var space: PhysicsDirectSpaceState3D = level.get_world_3d().direct_space_state
+	var launchers := LevelRules.launchers(level)
+	for area in LevelRules.AREAS:
+		var found := LevelRules.check(space, LevelRules.AREAS[area], launchers)
+		var texts: Array[String] = []
+		for f in found:
+			texts.append(f["text"])
+		check("%s follows the level feel rules" % area, found.is_empty(), "none" if texts.is_empty() else ", ".join(texts))
+	# a floating test strip at y 50 south of the map, running +X. Floors are 8 m deep in z.
+	var y := 50.0
+	var c := Color(0.8, 0.3, 0.3)
+	var slab := func(x0: float, x1: float, top: float) -> void:
+		level.box(Vector3((x0 + x1) / 2.0, top - 0.5, 170.0), Vector3(x1 - x0, 1.0, 8.0), Basis(), c)
+	slab.call(0.0, 8.0, y)
+	slab.call(12.0, 20.0, y) # 4 m gap: too short
+	slab.call(20.0, 28.0, y + 1.0) # 1 m ledge: too low
+	slab.call(28.0, 36.0, y + 3.0) # 2 m ledge: fine
+	slab.call(43.0, 49.0, y + 3.0) # 7 m gap: fine
+	slab.call(60.0, 68.0, y + 3.0) # 11 m gap after a 6 m runway: needs a longer run-up
+	await frames(2) # the new boxes reach the physics space next frame
+	var found := LevelRules.check(space, AABB(Vector3(-2, y - 10, 164), Vector3(72, 20, 12)))
+	var kinds := {}
+	for f in found:
+		kinds[f["text"]] = true
+	var want := ["short gap 4.0 m at (10, 170)", "low ledge 1.0 m at (20, 170)", "long gap 11.0 m at (55, 170)"]
+	var got := kinds.keys()
+	got.sort()
+	var caught := true
+	for w in want:
+		caught = caught and kinds.has(w)
+	check("rule checker catches a 4 m gap, a 1 m ledge and an 11 m gap with a 6 m runway, and nothing else",
+		caught and found.size() == want.size(), ", ".join(got))
+
+## Playtest tools: feedback pins restore your spot and kit, and every warp lands on a real place.
+func _tool_tests(arena: Vector3) -> void:
+	var m: Dictionary = level.marks
+	var dev = level.dev
+	# 59. A pin taken small, with the magnet on push and two hearts, brings all of that back from a link
+	await _fresh_player(arena + Vector3(3, 0, 5))
+	p.inventory.add("magnet")
+	p.inventory.add("bombs", 7)
+	p.magnet_push = true
+	p.set_small(true)
+	p.hp = 4
+	p.facing = Vector3.RIGHT
+	await frames(5)
+	var at := p.global_position
+	var link: String = dev.pin_link("jump here is too short")
+	await _fresh_player(arena)
+	dev._go_to_pin("look: " + link + " thanks")
+	await frames(2)
+	var back := Pin.decode(link)
+	check("a feedback pin link restores position, size, magnet, hearts, items and note",
+		p.global_position.distance_to(at) < 0.3 and p.small and p.magnet_push and p.hp == 4 and p.inventory.count("bombs") == 7
+		and p.inventory.has("magnet") and p.facing.dot(Vector3.RIGHT) > 0.95 and back.get("note", "") == "jump here is too short",
+		"%.2f m off, small %s, push %s, hp %d, bombs %d" % [p.global_position.distance_to(at), p.small, p.magnet_push, p.hp, p.inventory.count("bombs")])
+	check("junk text is not a pin", Pin.decode("hello there").is_empty() and Pin.decode("").is_empty(), "")
+	await _fresh_player(arena)
+	# 60. Every warp in the G menu lands you on a floor
+	var bad: Array[String] = []
+	for w in dev.WARPS:
+		var key: String = w[1]
+		if not (key in ["start", "arena"]) and not (m.get(key) is Vector3):
+			bad.append(key + " (no mark)")
+			continue
+		dev.warp(key)
+		await frames(20)
+		if not p.is_on_floor():
+			bad.append(key)
+	check("every warp lands on a floor", bad.is_empty(), "%d warps" % dev.WARPS.size() if bad.is_empty() else ", ".join(bad))
+	await _fresh_player(arena)

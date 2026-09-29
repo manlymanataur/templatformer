@@ -55,6 +55,7 @@ var roll_kind := "" ## "roll", "sidehop" or "backflip"
 var max_hp := 6 ## half hearts: 6 = 3 hearts
 var hp := 6
 var invuln := 0.0
+var god := false ## debug menu: nothing hurts you
 const INVULN_TIME := 1.0
 var inventory := Inventory.new()
 var spear: Spear
@@ -252,7 +253,7 @@ func respawn() -> void:
 		set_small(false)
 
 func hurt(amount: int, from: Vector3) -> void:
-	if invuln > 0.0 or hp <= 0 or dodging():
+	if god or invuln > 0.0 or hp <= 0 or dodging():
 		return
 	hp -= amount
 	invuln = INVULN_TIME
