@@ -8,6 +8,7 @@ var player: Player
 var use_defaults := false ## tests set this so saved tuning doesn't change results
 var marks := {} ## named positions the tests start from
 var checker: ImageTexture
+var dev: Node ## the playtest tools (dev_menu.gd): warps, pins, god mode
 
 
 func _ready() -> void:
@@ -35,6 +36,11 @@ func _ready() -> void:
 	hud.t = t
 	hud.player = player
 	add_child(hud)
+	dev = preload("res://scripts/dev_menu.gd").new()
+	dev.level = self
+	dev.player = player
+	dev.rig = rig
+	add_child(dev)
 
 func _make_checker() -> ImageTexture:
 	var img := Image.create(2, 2, false, Image.FORMAT_RGB8)

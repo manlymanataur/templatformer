@@ -33,6 +33,16 @@ Locally: open this folder in Godot 4.5 and press F5.
 The panel in the corner edits every feel number live: `[` `]` pick a value, `-` `=` change it by 10%,
 Backspace resets it, Tab hides the panel. Changes are saved and survive restarts.
 
+### Playtest tools
+
+| Key | What it does |
+| --- | --- |
+| G | Warp and debug menu: jump to any room, give every item, god mode, heal, shrink or grow |
+| P | Feedback pin: type a note, press Enter, and a link to this exact spot (with your items, size and facing) is copied. Paste it in the project chat. |
+| O | Load a pin: paste a pin link or code |
+
+Opening a pin link loads the game straight into that spot.
+
 Speed above your running top speed (from slopes, pads, launches) bleeds back down on flat ground. Running downhill still builds it.
 
 ## Ember & Umbra hall

@@ -35,6 +35,12 @@
 - Collision layers: 1 world (blocks light), 2 bars and railings (stop you at normal size, not light or Umbra), 3 grates, 4 Umbra.
 - Level pads are `Pad`s. `level.launch_pad` / `level.boost_pad` make always-on ones.
 - `scripts/monster.gd` is the basic blob. It's in groups `monsters`, `targets` (lock-on) and `hurtable`, and it recoils after touching you.
+- `scripts/dev_menu.gd` holds the playtest tools, which pause the game:
+  - G opens the warp and debug menu (`WARPS` names level marks; give every item, god mode, heal, shrink).
+  - P drops a feedback pin: jovi types a note and gets a link with `#pin=CODE`.
+  - O loads a pasted pin. The web build loads `#pin=` from the address on start; desktop takes `-- --pin=CODE`.
+  - `Pin` (`scripts/pin.gd`) captures and restores position, facing, camera, size, magnet, hearts, items and slots. A code is URL-safe base64 JSON, so decode it (`base64 -d` after swapping `-_` for `+/`) to read jovi's note and spot, and start a test there.
+- `scripts/level_rules.gd` checks built areas (`LevelRules.AREAS`) against the level feel rules: ledges under 2 m, gaps under 6 m, 10-12 m gaps without a 12 m runway or a pad nearby, and 3 m ledges as the norm. The first tests run it on every area. Add each new wing's box to `AREAS`, and stop a roofed wing's box under its roof.
 - `scripts/game_hud.gd` draws the hearts, the quick slots and the pause inventory (Enter). It runs while the game is paused.
 - jovi dropped loops (2026-09-29). Don't bring them back without asking.
 
@@ -45,6 +51,7 @@
 
 ## Working rules
 
+- Don't spend long proving a level has only one solution (jovi, 2026-09-29). Check the intended route and the obvious skips. jovi and playtesters report cheese.
 - Nobody can feel the game from here. Every change to feel ships with a test in `tests/run_tests.gd` that states the number it guarantees (jump height, clearable gap, launch height), plus the web build for the owner to play.
 - Tests drive the player with `ai`, `ai_move`, `ai_jump`, `ai_target`, `ai_attack`, `ai_attack_held` and `ai_item`, never with real input. Rolls are a quick `ai_move` tap (the test helper `_tap`). While locked on, give `ai_move` relative to the player's facing, the way a real stick is read relative to the camera.
 - Use `absf`, `maxf` and typed vars. Godot's parser rejects `:=` on Variant-typed expressions.
