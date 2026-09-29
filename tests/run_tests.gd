@@ -910,3 +910,32 @@ func _yard_tests(arena: Vector3) -> void:
 		burned.append(grass.burning or grass.burnt)
 		grass.queue_free()
 	check("attacks set grass alight only while you wear the candle", burned == [false, true], "without %s, with %s" % [burned[0], burned[1]])
+
+	# 49. Iron is 4.5 m tall: a running double jump hits its side, a running triple jump clears it
+	var face := 63.0 # the cube's near face; the run goes north (-Z) from z 100
+	var cube := IronCube.make(level, Vector3(90, 0, face - 1.0))
+	await frames(3)
+	var ends := []
+	for chain in [2, 3]:
+		await _fresh_player(Vector3(90, 0.6, 100))
+		p.velocity = Vector3(0, 0, -t.top_speed)
+		p.ai_move = Vector2(0, -1)
+		# first hop so the last jump takes off about 6 m short of the face (a single covers ~9.6 m, a double ~12 m)
+		var first := face + (27.8 if chain == 3 else 15.6)
+		var hops := 0
+		for i in 300:
+			await physics_frame
+			if p.is_on_floor() and not p.ai_jump and hops < chain:
+				if hops == 0 and p.global_position.z < first or hops > 0:
+					p.ai_jump = true
+					hops += 1
+			elif not p.is_on_floor() and p.ai_jump and p.velocity.y < 0.0:
+				p.ai_jump = false
+			if hops >= chain and p.is_on_floor() and p.global_position.z < face - 3.5:
+				break
+		p.ai_jump = false
+		p.ai_move = Vector2.ZERO
+		ends.append(p.global_position.z)
+	check("a running double jump can't get over 4.5 m iron", ends[0] > face, "stopped at z %.1f, face at %.1f" % [ends[0], face])
+	check("a running triple jump clears 4.5 m iron", ends[1] < face - 3.5, "landed at z %.1f, far side at %.1f" % [ends[1], face - 2.0])
+	cube.queue_free()
