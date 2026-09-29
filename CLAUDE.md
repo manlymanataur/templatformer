@@ -52,8 +52,10 @@
   - Ledge grab: falling against a wall with its top within `ledge_reach` hangs you (`hang`). Iron (`IronCube`) can't be grabbed, so it still needs a triple jump.
   - Grind rails (`scripts/rail.gd`, group `rails`, no collision): gravity along the rail, jump hops off.
   - Homing attack: air attack homes on the nearest `hurtable` or `pogo` node ahead, hits it once (it shares the spear's hit list) and bounces you straight up off its top. `Spikes` (group `pogo`) hurt on touch.
+  - Ground pound (`_pound_step`, context in the air with empty hands): onto `hurtable`/`pogo` it hits and bounces (homing can chain after); flat landing opens `pound_land` for a high jump, or rolls out if you hold a direction; onto a slope it becomes downhill speed. Jumping out of a ground roll is a long jump. Rolls keep `roll_speed_now` and gain it downhill. A wall kick leaves `jump_chain` at 0, so the next landing jump is a double.
   - Perfect dodge: a hit during a roll calls `Hitfx.slow`; `Hitfx.world` slows monsters (they multiply their dt by it).
   - `scripts/hitfx.gd`: hitstop (`Engine.time_scale`), camera shake (group `camera_rig`), sparks.
+- `scripts/challenge.gd` builds the challenge rooms (`Challenge.build`): doors in the moves yard, courses floating at y 200+ from x 300. Marks `challenge_<name>` hold each `Challenge` node (`start`, `goal`, `cleared`); walking into a door calls `enter()`, falling below `floor_y` restarts, the star calls `finish()`.
 - `scripts/game_hud.gd` draws the hearts, the quick slots and the pause inventory (Enter). It runs while the game is paused.
 - jovi dropped loops (2026-09-29). Don't bring them back without asking.
 

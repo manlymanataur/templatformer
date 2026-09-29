@@ -37,7 +37,7 @@ static func build(lv: Node3D) -> void:
 	rect.call(-4, 4, -90, -82, 0, 8, STONE)
 	Spikes.make(lv, Vector3(0, 3.5, -74))
 	Spikes.make(lv, Vector3(0, 6.5, -78))
-	lv.label(Vector3(0, 2, -66), "air attack near spikes to pogo", 32)
+	lv.label(Vector3(0, 2, -66), "air attack near spikes to pogo, or ground pound them (E in the air)", 32)
 	marks["moves_pogo"] = Vector3(0, 0.6, -68)
 	marks["moves_pogo_top"] = 8.0
 

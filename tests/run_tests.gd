@@ -324,6 +324,8 @@ func _combat_tests() -> void:
 	await _tool_tests(arena)
 	await _rootworks_tests(arena)
 	await _moves_yard_tests(arena)
+	await _combo_tests(arena)
+	await _challenge_tests(arena)
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -1681,3 +1683,250 @@ func _moves_yard_tests(arena: Vector3) -> void:
 	p.stow_spider()
 	g.queue_free()
 
+
+
+## Put the player in mid-air at pos, still.
+func _hover(pos: Vector3) -> void:
+	p.global_position = pos
+	p.velocity = Vector3.ZERO
+	await physics_frame
+	p.global_position = pos
+	p.velocity = Vector3.ZERO
+
+## Ground pound and the combos between moves.
+func _combo_tests(arena: Vector3) -> void:
+	var m: Dictionary = level.marks
+	var t: Tuning = level.t
+
+	# 78. Ground pound: context in the air drops you at pound_speed; jumping right after is a high jump
+	await _fresh_player(arena)
+	p.ai_jump = true
+	await frames(20)
+	p.ai_jump = false
+	p.ai_context = true
+	var fastest := 0.0
+	for i in 60:
+		await physics_frame
+		fastest = maxf(fastest, -p.velocity.y)
+		if p.pound_land < 0.05:
+			break
+	var y0 := p.global_position.y
+	p.ai_jump = true
+	var top := y0
+	for i in 60:
+		await physics_frame
+		top = maxf(top, p.global_position.y)
+	p.ai_jump = false
+	var want := pow(t.jump_speed * t.pound_jump_mult, 2) / (2.0 * t.gravity)
+	check("ground pound drops at %.0f m/s" % t.pound_speed, absf(fastest - t.pound_speed) < 0.5, "%.1f m/s" % fastest)
+	check("a jump right out of a pound goes %.1f m high (triple-jump height)" % want, absf(top - y0 - want) < 0.3, "%.2f m" % (top - y0))
+	await frames(30)
+
+	# 79. Pound onto a blob: it takes 2 and you bounce; the air attack then homes onto the next blob
+	await _fresh_player(arena + Vector3(6, 0, 6))
+	var b1 := Monster.spawn(level, arena + Vector3(0, 0.2, 0))
+	var b2 := Monster.spawn(level, arena + Vector3(0, 0.2, -5))
+	for b in [b1, b2]:
+		b.stun = 60.0
+		b.hp = 10
+		b.drop_heart = false
+	await _hover(arena + Vector3(0, 4, 0))
+	p.ai_context = true
+	var bounced := false
+	var up := 0.0
+	for i in 60:
+		await physics_frame
+		up = maxf(up, p.velocity.y)
+		bounced = bounced or (b1.hp < 10 and p.velocity.y > t.pogo_speed)
+		if bounced:
+			break
+	p.inventory.add("spear")
+	p.facing = Vector3.FORWARD
+	await frames(8)
+	p.ai_attack = true
+	await frames(40)
+	check("pound onto a blob hits it and bounces; the air attack chains onto the next", bounced and b1.hp == 8 and b2.hp == 8,
+		"bounced %s (up %.1f m/s), first blob %d, second %d" % [bounced, up, b1.hp, b2.hp])
+	b1.queue_free()
+	b2.queue_free()
+
+	# 80. Pound onto spikes bounces you off them unharmed
+	await _fresh_player(Vector3(0, 0.6, -70))
+	await _hover(Vector3(0, 7.0, -74))
+	p.ai_context = true
+	bounced = false
+	for i in 60:
+		await physics_frame
+		bounced = bounced or p.velocity.y > t.pogo_speed
+	check("pound onto spikes bounces you unharmed", bounced and p.hp == p.max_hp, "bounced %s, hp %d" % [bounced, p.hp])
+
+	# 81. Pound while holding a direction rolls you out on landing; jumping out of the roll is a long jump
+	await _fresh_player(arena)
+	p.ai_jump = true
+	await frames(15)
+	p.ai_jump = false
+	p.ai_context = true
+	await frames(5)
+	p.ai_move = Vector2(0, -1)
+	var rolled := false
+	for i in 60:
+		await physics_frame
+		if p.roll_t > 0.0 and p.roll_kind == "roll":
+			rolled = true
+			break
+	await frames(3)
+	var from := p.global_position
+	p.ai_jump = true
+	await frames(3)
+	p.ai_jump = false
+	var left := false
+	for i in 120:
+		await physics_frame
+		left = left or not p.is_on_floor()
+		if left and p.is_on_floor():
+			break
+	p.ai_move = Vector2.ZERO
+	var dist := Vector2(p.global_position.x - from.x, p.global_position.z - from.z).length()
+	var want_long := 2.0 * t.long_jump_up / t.gravity * t.long_jump_speed
+	check("pound + direction rolls, and a jump out of the roll is a %.1f m long jump" % want_long, rolled and dist > want_long - 1.0,
+		"rolled %s, jumped %.1f m" % [rolled, dist])
+
+	# 82. Pound onto a slope: the fall becomes speed downhill
+	await _fresh_player(arena)
+	await _hover(Vector3(m["ramp30"].x, 7.0, -11.0))
+	p.ai_context = true
+	var slide := 0.0
+	for i in 60:
+		await physics_frame
+		if p.pound_t < 0.0 and p.is_on_floor():
+			slide = maxf(slide, p.velocity.length())
+	check("pound onto a 30° slope sends you downhill faster than you run (%.0f m/s)" % t.top_speed, slide > t.top_speed + 4.0, "%.1f m/s" % slide)
+	await frames(60)
+
+	# 83. Rolling downhill gains speed
+	await _fresh_player(Vector3(m["ramp30"].x, 5.5, -15.0))
+	await frames(10)
+	p.facing = Vector3.BACK # facing downhill, so a forward tap rolls downhill
+	p.ai_target = true
+	await frames(3)
+	await _tap(Vector3.BACK)
+	var roll_top := 0.0
+	for i in 30:
+		await physics_frame
+		if p.roll_t > 0.0:
+			roll_top = maxf(roll_top, p.velocity.length())
+	p.ai_target = false
+	check("a roll down a 30° slope speeds up past roll speed %.0f" % t.roll_speed, roll_top > t.roll_speed + 1.5, "%.1f m/s" % roll_top)
+	await frames(60)
+
+	# 84. A wall kick counts as the first jump of the chain: land and jump for a double
+	await _fresh_player(arena)
+	var wall: StaticBody3D = level.box(arena + Vector3(0, 2.4, -1.4), Vector3(4, 6, 0.6), Basis(), Color.GRAY)
+	p.ai_move = Vector2(0, -1)
+	p.ai_jump = true
+	await frames(12)
+	p.ai_jump = false
+	await frames(8)
+	p.ai_jump = true # into the wall: kick off it
+	await frames(3)
+	p.ai_jump = false
+	var kicked := p.velocity.z > 4.0
+	p.ai_move = Vector2(0, 1)
+	var chain := -1
+	for i in 90:
+		await physics_frame
+		if p.is_on_floor() and p.land_time < 0.05 and not p.ai_jump:
+			p.ai_jump = true
+			await frames(2)
+			chain = p.jump_chain
+			break
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	check("a wall kick then a jump on landing is a double jump", kicked and chain == 1, "kicked %s, chain %d" % [kicked, chain])
+	wall.queue_free()
+	await frames(60)
+
+
+## Walk into a challenge door. Returns once you're in the room.
+func _enter_room(c: Challenge) -> void:
+	await _fresh_player(c.door_at + Vector3(0, 0.6, 2.5))
+	p.ai_move = Vector2(0, -1)
+	for i in 60:
+		await physics_frame
+		if c.inside:
+			break
+	p.ai_move = Vector2.ZERO
+	await frames(10)
+
+## Challenge rooms: each door leads to a course, and its star brings you back with the door cleared.
+func _challenge_tests(arena: Vector3) -> void:
+	var m: Dictionary = level.marks
+	var t: Tuning = level.t
+
+	# 85. Rail run: two downhill rails, each kicking you over a 10 m gap
+	var c: Challenge = m["challenge_rail"]
+	await _enter_room(c)
+	var entered := c.inside and p.global_position.distance_to(c.start) < 1.0
+	p.ai_move = Vector2(0, -1)
+	for i in 900:
+		await physics_frame
+		if c.cleared:
+			break
+	p.ai_move = Vector2.ZERO
+	check("a door takes you in; the rail run's two rails and 10 m gaps reach the star", entered and c.cleared and not c.inside
+		and p.global_position.distance_to(c.door_at) < 3.5, "entered %s, cleared %s, back by the door %s" % [entered, c.cleared, p.global_position.distance_to(c.door_at) < 3.5])
+
+	# 86. Pogo chain: pound each of four spike balls to bounce across the 25 m drop
+	c = m["challenge_pogo"]
+	await _enter_room(c)
+	p.ai_move = Vector2(0, -1)
+	var bounces := 0
+	var jumped := false
+	var spikes := [c.start.z - 1.5 - 5.0, c.start.z - 1.5 - 10.0, c.start.z - 1.5 - 15.0, c.start.z - 1.5 - 20.0]
+	for i in 900:
+		await physics_frame
+		if c.cleared:
+			break
+		var z := p.global_position.z
+		if p.is_on_floor() and not jumped and z < c.start.z - 3.5:
+			p.ai_jump = true
+			jumped = true
+		elif p.ai_jump and p.velocity.y < 0.0:
+			p.ai_jump = false
+		if p.pound_t < 0.0 and not p.is_on_floor() and bounces < 4 and absf(z - spikes[bounces]) < 0.6:
+			p.ai_context = true
+			bounces += 1
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	check("pogo chain: four ground pounds on spikes carry you across to the star unharmed", c.cleared and p.hp == p.max_hp and bounces == 4,
+		"cleared %s, pounds %d, hp %d" % [c.cleared, bounces, p.hp])
+
+	# 87. Long jump: 10 m gaps between 4 m platforms. Pound onto each, roll out and long-jump
+	c = m["challenge_long"]
+	await _enter_room(c)
+	p.ai_move = Vector2(0, -1)
+	var longs := 0
+	var o := c.start - Vector3(0, 4.6, -1)
+	p.ai_jump = true
+	await frames(8)
+	p.ai_jump = false
+	p.ai_context = true # pound on the start platform
+	for i in 900:
+		await physics_frame
+		if c.cleared:
+			break
+		var z := p.global_position.z
+		var edge := o.z - floorf((o.z - z) / 14.0) * 14.0 - 4.0
+		if p.roll_t > 0.0 and p.is_on_floor() and not p.ai_jump and z < edge + 0.7:
+			p.ai_jump = true # jump out of the roll at the edge: long jump
+			longs += 1
+		elif p.ai_jump and not p.is_on_floor():
+			p.ai_jump = false
+		for k in range(1, 4):
+			var mid := o.z - k * 14.0 - 2.0
+			if p.pound_t < 0.0 and p.velocity.y < 0.0 and not p.is_on_floor() and absf(z - mid) < 0.8 and p.global_position.y > o.y + 4.5:
+				p.ai_context = true # over the next platform: pound down onto it
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	check("long jump room: pound, roll, long-jump over three %.0f m gaps to the star" % 10.0, c.cleared and longs >= 3, "cleared %s, long jumps %d" % [c.cleared, longs])
+	await _fresh_player(arena)
