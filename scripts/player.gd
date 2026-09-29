@@ -4,9 +4,9 @@ extends CharacterBody3D
 ## In the air, gravity is always world-down.
 ## Jumps chain Mario-style: land and jump again quickly, while moving, for a higher double and triple jump.
 ## Push into a wall while falling to slide down it, press jump to kick off it.
-## Roll to dodge (brief invincibility). While holding target: locked onto a target you circle it,
-## with nothing to lock you strafe facing one way; a quick tap of the stick (or the roll button) dodges:
-## forward rolls, sideways side hops, back backflips.
+## A quick tap of the stick (out of neutral and back) rolls that way, with brief invincibility. There's no roll button.
+## While holding target: locked onto a target you circle it, with nothing to lock you strafe facing one way,
+## and a tap dodges: forward rolls, sideways side hops, back backflips.
 ## The candle hat (a quick-slot item) makes you a light source and sets fire to what you touch.
 ## While you aren't giving off light, your body blocks light like any solid thing: see Lighting.
 ## Health is counted in half hearts; getting hurt gives knockback and a second of invincibility.
@@ -16,14 +16,13 @@ var cam_basis := Basis() ## yaw-only camera basis; stick input is read relative 
 var spawn := Vector3.ZERO
 
 # Scripted input for headless tests: when ai is true, ai_move is a world-space XZ direction.
-# ai_jump / ai_attack_held are held buttons; ai_attack, ai_roll and ai_item press for one frame.
+# ai_jump / ai_attack_held are held buttons; ai_attack and ai_item press for one frame. Rolls come from tapping ai_move.
 var ai := false
 var ai_move := Vector2.ZERO
 var ai_jump := false
 var ai_target := false
 var ai_attack := false
 var ai_attack_held := false
-var ai_roll := false
 var ai_item := -1
 var _ai_jump_prev := false
 
@@ -76,6 +75,7 @@ func _ready() -> void:
 	floor_stop_on_slope = false
 	floor_block_on_wall = false
 	max_slides = 6
+	collision_mask = 1 | 1 << 1 | 1 << 2 # the world, bars and railings, and grates (until you shrink)
 	var col := CollisionShape3D.new()
 	var sphere := SphereShape3D.new()
 	sphere.radius = 0.5
@@ -253,7 +253,6 @@ func _physics_process(dt: float) -> void:
 	var jump_held: bool
 	var attack_pressed: bool
 	var attack_held: bool
-	var roll_pressed: bool
 	var item_pressed := -1
 	if ai:
 		jump_pressed = ai_jump and not _ai_jump_prev
@@ -262,10 +261,8 @@ func _physics_process(dt: float) -> void:
 		_ai_jump_prev = ai_jump
 		attack_pressed = ai_attack
 		attack_held = ai_attack or ai_attack_held
-		roll_pressed = ai_roll
 		item_pressed = ai_item
 		ai_attack = false
-		ai_roll = false
 		ai_item = -1
 	else:
 		jump_pressed = Input.is_action_just_pressed("jump")
@@ -273,7 +270,6 @@ func _physics_process(dt: float) -> void:
 		target_held = Input.is_action_pressed("target")
 		attack_pressed = Input.is_action_just_pressed("attack")
 		attack_held = Input.is_action_pressed("attack")
-		roll_pressed = Input.is_action_just_pressed("roll")
 		for i in Inventory.SLOTS:
 			if Input.is_action_just_pressed("item_%d" % (i + 1)):
 				item_pressed = i
@@ -319,7 +315,7 @@ func _physics_process(dt: float) -> void:
 	elif on_floor:
 		land_time += dt
 
-	roll_buffer = t.jump_buffer if roll_pressed else maxf(roll_buffer - dt, 0.0)
+	roll_buffer = maxf(roll_buffer - dt, 0.0)
 	if roll_buffer > 0.0 and roll_t <= 0.0 and on_floor and carrying == null:
 		roll_buffer = 0.0
 		_start_roll(_roll_wish if _roll_wish != Vector3.ZERO else wish)
@@ -339,8 +335,8 @@ func _physics_process(dt: float) -> void:
 	_update_visual(dt)
 	visual.visible = invuln <= 0.0 or fmod(invuln, 0.15) < 0.09
 
-## Locked on, a quick tap of the stick (out of neutral and back within dodge_tap_time) dodges that way.
-## Holding the stick longer just strafes or circles.
+## A quick tap of the stick (out of neutral and back within dodge_tap_time) rolls or dodges that way.
+## Holding the stick longer just runs, strafes or circles.
 func _read_tap(dt: float, wish: Vector3) -> void:
 	var m := wish.length()
 	if m >= 0.5:
@@ -350,7 +346,7 @@ func _read_tap(dt: float, wish: Vector3) -> void:
 			_tap_t += dt
 			_tap_dir = wish
 	elif m < 0.3:
-		if target_held and _tap_t >= 0.0 and _tap_t <= t.dodge_tap_time:
+		if _tap_t >= 0.0 and _tap_t <= t.dodge_tap_time:
 			roll_buffer = t.jump_buffer
 			_roll_wish = _tap_dir
 		_tap_t = -1.0

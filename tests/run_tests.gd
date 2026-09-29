@@ -423,11 +423,11 @@ func _move_tests(arena: Vector3) -> void:
 	p.ai_move = Vector2.ZERO
 	check("wall slide caps fall speed", fastest <= t.wall_slide_speed + 0.5, "fastest fall %.1f m/s" % fastest)
 
-	# 25. Roll: covers ground fast and dodges a hit early on
+	# 25. Roll (a quick tap of the stick, there's no roll button): covers ground fast and dodges a hit early on
 	await _fresh_player(arena)
 	var x0 := p.global_position
-	p.ai_roll = true
-	await frames(3)
+	await _tap(Vector3.FORWARD)
+	check("a quick tap rolls", p.roll_t > 0.0 and p.roll_kind == "roll", "rolling %s" % (p.roll_t > 0.0))
 	p.hurt(1, p.global_position + Vector3.FORWARD)
 	var dodged := p.hp == p.max_hp
 	await frames(24)
@@ -442,17 +442,15 @@ func _move_tests(arena: Vector3) -> void:
 	p.ai_target = true
 	await frames(10)
 	x0 = p.global_position
-	p.ai_move = Vector2(1, 0)
-	p.ai_roll = true
-	await frames(20)
+	await _tap(p._flat_facing().cross(Vector3.UP))
+	await frames(18)
 	var d := p.global_position - x0
 	check("locked-on side hop moves sideways", absf(d.x) > 2.0 and absf(d.z) < 1.0 and p.roll_kind == "sidehop", "moved %s" % [d.snapped(Vector3(0.1, 0.1, 0.1))])
 	await frames(30)
 	x0 = p.global_position
 	var away := -p._flat_facing() # stick pulled back, relative to the camera that faces the target
-	p.ai_move = Vector2(away.x, away.z)
-	p.ai_roll = true
 	var top := 0.0
+	await _tap(away)
 	for i in 40:
 		await physics_frame
 		top = maxf(top, p.global_position.y - x0.y)
@@ -595,6 +593,13 @@ func _move_tests(arena: Vector3) -> void:
 
 
 ## Call Umbra with the camera facing +Z (the way into the hall), so its mirror line is the X axis.
+## A quick flick of the stick one way and back to neutral; returns once the roll has started.
+func _tap(dir: Vector3) -> void:
+	p.ai_move = Vector2(dir.x, dir.z)
+	await frames(5)
+	p.ai_move = Vector2.ZERO
+	await frames(2)
+
 func _summon_facing_north() -> Umbra:
 	p.cam_basis = Basis(Vector3.UP, PI)
 	p.toggle_umbra()
@@ -638,10 +643,10 @@ func _hall_tests(arena: Vector3) -> void:
 	mon.queue_free()
 
 	# 36. Light: the lantern lights its chasm, your body shadows it, and wearing the candle you shine instead
-	var spot := Vector3(-3, 4.5, 106)
-	await _fresh_player(m["hall_c"] + Vector3(0, 0, -4))
+	var spot := Vector3(-6, 4.5, 104)
+	await _fresh_player(Vector3(6, 4.6, 104))
 	var open_lit := Lighting.is_lit(spot, p)
-	await _fresh_player(Vector3(3, 4.6, 106))
+	await _fresh_player(m["hall_c"])
 	var shadowed := not Lighting.is_lit(spot, p)
 	p.set_candle(true)
 	var candle_lit := Lighting.is_lit(spot, p)
@@ -679,9 +684,11 @@ func _hall_tests(arena: Vector3) -> void:
 			far += 1
 	check("grass fire spreads, melts the ice, lights the brazier, opens the gate", far == 12 and gate_a.opened, "%d of 12 patches burnt, gate open %s" % [far, gate_a.opened])
 
-	# 39. Umbra floats over the dark chasm, mirrored, to the moon plate
+	# 39. Umbra appears in front of you, then floats over the dark chasm, mirrored, to the moon plate
 	await _fresh_player(m["hall_b"])
 	var u := _summon_facing_north()
+	var ahead := u.global_position - p.global_position
+	check("Umbra appears 1.5 m in front of you", absf(ahead.z - 1.5) < 0.05 and absf(ahead.x) < 0.05, "offset %s" % [ahead])
 	var ux0 := u.global_position.x
 	var y_start := u.global_position.y
 	var low := y_start
@@ -697,17 +704,18 @@ func _hall_tests(arena: Vector3) -> void:
 	check("Umbra on the moon plate opens the gate", gate_b.opened, "open %s" % gate_b.opened)
 	await _fresh_player(m["hall_b"])
 	u = _summon_facing_north()
+	var uz0 := u.global_position.z
 	p.ai_move = Vector2(0, 1)
-	await frames(12)
+	await frames(20)
 	p.ai_move = Vector2.ZERO
-	var dz: float = u.global_position.z - (m["hall_b"] as Vector3).z
+	var dz: float = u.global_position.z - uz0
 	check("walking +Z moves Umbra +Z too", dz > 0.8, "Umbra moved %.1f m" % dz)
 
 	# 40. Light makes Umbra fall: over the chasm, putting the candle on drops it and it fades
 	await _fresh_player(m["hall_b"])
 	u = _summon_facing_north()
 	p.ai_move = Vector2(1, 0)
-	await frames(12)
+	await frames(30)
 	p.ai_move = Vector2.ZERO
 	var over := u.global_position.x < -1.5
 	p.set_candle(true)
@@ -724,26 +732,40 @@ func _hall_tests(arena: Vector3) -> void:
 	p.ai_move = Vector2.ZERO
 	check("in sunlight Umbra crawls on the ground", u.lit and on_ground and crawl <= t.umbra_crawl_speed + 0.1, "lit %s, on ground %s, %.1f m/s" % [u.lit, on_ground, crawl])
 
-	# 42. Across the lit chasm Umbra only floats inside your shadow
+	# 42. Across the lit chasm Umbra only floats inside your shadow: pinned at the railing on the lantern's line,
+	# push forward and Umbra drifts through the bars onto the plate
 	var gate_c: Gate = m["hall_c_gate"]
-	await _fresh_player(m["hall_c"] + Vector3(0, 0, -3.0)) # well off the lantern's line
+	await _fresh_player(m["hall_c"] + Vector3(3.5, 0, 0)) # well off the lantern's line
 	u = _summon_facing_north()
-	p.ai_move = Vector2(1, 0)
+	p.ai_move = Vector2(0, 1)
 	for i in 90:
 		await physics_frame
 	p.ai_move = Vector2.ZERO
 	var fell := p.umbra == null
-	await _fresh_player(m["hall_c"]) # on the line: your body shades it all the way
+	await _fresh_player(m["hall_c"])
 	u = _summon_facing_north()
-	p.ai_move = Vector2(1, 0)
+	p.ai_move = Vector2(0, 1)
+	var held := true
 	for i in 150:
 		await physics_frame
-		if p.umbra == null:
+		held = held and p.global_position.z < 100.0
+		if p.umbra == null or gate_c.opened:
 			break
 	p.ai_move = Vector2.ZERO
 	check("off the lantern's line Umbra falls", fell, "fell %s" % fell)
-	check("in your shadow Umbra crosses the lit chasm and opens the gate", p.umbra != null and gate_c.opened,
-		"Umbra out %s, gate open %s" % [p.umbra != null, gate_c.opened])
+	check("in your shadow Umbra crosses the lit chasm and opens the gate", p.umbra != null and gate_c.opened and held,
+		"Umbra out %s, gate open %s, railing held you %s" % [p.umbra != null, gate_c.opened, held])
+	# the bay is barred: you can't walk in and call Umbra onto the plate yourself
+	await _fresh_player(Vector3(-6, 4.6, 115))
+	p.ai_move = Vector2(0, -1)
+	await frames(60)
+	p.ai_move = Vector2.ZERO
+	check("the plate's bay keeps you out", p.global_position.z > 113.5, "reached z %.1f" % p.global_position.z)
+	await _fresh_player(Vector3(-1.4, 4.6, 112))
+	p.cam_basis = Basis(Vector3.UP, PI / 2.0) # facing west, at the bay's side wall
+	p.toggle_umbra()
+	check("Umbra doesn't appear through a wall", p.umbra.global_position.x > -2.0, "appeared at x %.1f" % p.umbra.global_position.x)
+	p.toggle_umbra()
 
 
 func _yard_tests(arena: Vector3) -> void:

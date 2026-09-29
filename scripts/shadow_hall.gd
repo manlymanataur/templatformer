@@ -6,7 +6,8 @@ extends RefCounted
 ## Room B (z 76-96): Umbra. The ledge with the moon plate is across a dark chasm. Take the hat off, call
 ##   Umbra, and walk away from the chasm: mirrored, it drifts over the chasm to the plate.
 ## Room C (z 96-116): your shadow. A lantern lights this chasm, so Umbra can only cross inside your shadow.
-##   Stand on the lantern's line with the hat off, then walk toward the lantern and keep pushing.
+##   Stand on the lantern's line at the railing with the hat off, face across, call Umbra in front of you and
+##   keep pushing forward: the railing holds you while Umbra drifts on across, inside your shadow.
 ## Fall into a chasm and you're put back at the room's entrance.
 
 const FLOOR := 4.0
@@ -32,10 +33,9 @@ static func build(lv: Node3D) -> void:
 	rect.call(-12, 8, 61, 80, 0, FLOOR, STONE) # entry, room A, start of room B
 	rect.call(0, 8, 80, 94, 0, FLOOR, STONE) # room B walkway
 	rect.call(-12, -8, 85, 89, 0, FLOOR, STONE) # room B ledge
-	rect.call(-12, 8, 94, 98, 0, FLOOR, STONE)
-	rect.call(0, 8, 98, 114, 0, FLOOR, STONE) # room C walkway
-	rect.call(-12, -6, 104, 108, 0, FLOOR, STONE) # room C ledge
-	rect.call(-12, 8, 114, 121, 0, FLOOR, STONE)
+	rect.call(-12, 8, 94, 100, 0, FLOOR, STONE)
+	rect.call(4, 8, 100, 110, 0, FLOOR, STONE) # room C walkway
+	rect.call(-12, 8, 110, 121, 0, FLOOR, STONE)
 
 	# shell: side walls, roof, south wall with the door, north wall with the way out
 	rect.call(-12.5, -12, 60.5, 121.5, FLOOR, ROOF, WALL)
@@ -70,33 +70,74 @@ static func build(lv: Node3D) -> void:
 	plate_b.pressed.connect(gate_b.open)
 	lv.label(Vector3(4, FLOOR + 3, 87), "in the dark Umbra floats", 28)
 	_pit(lv, Vector3(-6, 0, 87), Vector3(12, 1.5, 14), Vector3(4, FLOOR + 0.6, 78))
-	marks["hall_b"] = Vector3(0.8, FLOOR + 0.6, 87)
+	marks["hall_b"] = Vector3(0.8, FLOOR + 0.6, 86)
 	marks["hall_b_plate"] = plate_b
 	marks["hall_b_gate"] = gate_b
 
-	# Room C: the lantern lights the chasm x -12..0, z 98..114. Umbra can only cross in your shadow.
-	rect.call(-12, -6, 103.5, 104, FLOOR, FLOOR + 2.0, WALL)
-	rect.call(-12, -6, 108, 108.5, FLOOR, FLOOR + 2.0, WALL)
-	var lantern := Brazier.make(lv, Vector3(7.4, FLOOR, 106), true, 0.5)
+	# Room C: the lantern lights the chasm x -12..4, z 100..110. Umbra can only cross it in your shadow.
+	# The moon plate sits in a walled bay; bars close its side toward the lantern. Light and Umbra pass bars, you don't.
+	rect.call(-12, -2, 113.5, 114, FLOOR, ROOF, WALL)
+	rect.call(-2.5, -2, 110, 113.5, FLOOR, ROOF, WALL)
+	fence(lv, Vector3(-7.25, FLOOR, 110.1), Vector3(9.5, ROOF - FLOOR, 0.1))
+	var lantern := Brazier.make(lv, Vector3(-6, FLOOR, 97.5), true, 0.5)
 	var line := MeshInstance3D.new() # a dark inlay on the floor marks the lantern's line
 	var lm := BoxMesh.new()
-	lm.size = Vector3(6.5, 0.02, 0.3)
+	lm.size = Vector3(0.3, 0.02, 2.2)
 	line.mesh = lm
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(0.12, 0.1, 0.2)
 	line.material_override = m
 	lv.add_child(line)
-	line.global_position = Vector3(3.6, FLOOR + 0.01, 106)
-	var plate_c := MoonPlate.make(lv, Vector3(-9.5, FLOOR, 106), Vector3(3.5, 0.1, 3.5))
+	line.global_position = Vector3(-6, FLOOR + 0.01, 98.9)
+	fence(lv, Vector3(-4, FLOOR, 100), Vector3(16, 1.1, 0.1))
+	var plate_c := MoonPlate.make(lv, Vector3(-6, FLOOR, 111.8), Vector3(3.5, 0.1, 3.3))
 	var gate_c := _cross_wall(rect, 116, 2, 6, true)
 	plate_c.pressed.connect(gate_c.open)
-	lv.label(Vector3(4, FLOOR + 3, 101), "in your shadow it floats", 28)
-	_pit(lv, Vector3(-6, 0, 106), Vector3(12, 1.5, 16), Vector3(4, FLOOR + 0.6, 99))
+	lv.label(Vector3(-4, FLOOR + 3, 99), "in your shadow it floats", 28)
+	_pit(lv, Vector3(-4, 0, 105), Vector3(16, 1.5, 10), Vector3(4, FLOOR + 0.6, 98))
 	Pickup.spawn(lv, "heart", 1, Vector3(4, FLOOR + 0.8, 119))
-	marks["hall_c"] = Vector3(0.8, FLOOR + 0.6, 106)
+	marks["hall_c"] = Vector3(-6, FLOOR + 0.6, 99) # on the lantern line, just short of the railing
 	marks["hall_c_plate"] = plate_c
 	marks["hall_c_gate"] = gate_c
 	marks["hall_lantern"] = lantern
+
+## A railing or bars: it stops you (and anything else on collision layer 2's mask) but light and Umbra pass through it.
+## pos is the middle of its base.
+static func fence(parent: Node, pos: Vector3, size: Vector3) -> StaticBody3D:
+	var b := StaticBody3D.new()
+	b.collision_layer = 1 << 1
+	b.collision_mask = 0
+	var c := CollisionShape3D.new()
+	var s := BoxShape3D.new()
+	s.size = size
+	c.shape = s
+	c.position.y = size.y / 2.0
+	b.add_child(c)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.25, 0.24, 0.3)
+	mat.metallic = 0.6
+	var long := size.x >= size.z
+	var length := maxf(size.x, size.z)
+	var rail := MeshInstance3D.new()
+	var rm := BoxMesh.new()
+	rm.size = Vector3(size.x, 0.08, size.z)
+	rail.mesh = rm
+	rail.material_override = mat
+	rail.position.y = size.y - 0.04
+	b.add_child(rail)
+	var n := int(length / 0.8)
+	for k in n + 1:
+		var post := MeshInstance3D.new()
+		var pm := BoxMesh.new()
+		pm.size = Vector3(0.06, size.y, 0.06)
+		post.mesh = pm
+		post.material_override = mat
+		var along := -length / 2.0 + length * float(k) / float(maxi(n, 1))
+		post.position = Vector3(along if long else 0.0, size.y / 2.0, 0.0 if long else along)
+		b.add_child(post)
+	parent.add_child(b)
+	b.global_position = pos
+	return b
 
 ## A wall across the hall at z, floor to roof, with a 4 m high doorway from x d0 to d1.
 ## With gated, bars fill the doorway; returns the Gate.

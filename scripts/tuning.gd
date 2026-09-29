@@ -30,7 +30,7 @@ extends Resource
 @export var spin_charge_time := 0.6
 @export var bomb_throw_speed := 7.0
 @export var bomb_throw_up := 5.0
-@export var dodge_tap_time := 0.2 ## locked on, a stick tap shorter than this dodges
+@export var dodge_tap_time := 0.2 ## a stick tap shorter than this rolls (or dodges, locked on)
 @export var candle_range := 12.0 ## how far the candle hat lights
 @export var candle_touch := 0.9 ## how close (from your centre) the candle sets things alight
 @export var umbra_speed := 10.0 ## Umbra floating in the dark
