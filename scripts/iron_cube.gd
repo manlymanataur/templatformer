@@ -5,7 +5,8 @@ extends AnimatableBody3D
 ## never from a diagonal, and only the nearest iron in each straight line feels you: anything solid
 ## in between, including other iron, shields it. Pull (negative) draws it toward you until it's
 ## next to you; push (positive) drives it away until something blocks it. Iron carries power (see Power).
-## Pushed off an edge, it drops.
+## Pushed off an edge, it drops; if it falls into a pit it goes back to where it started.
+## While you're small the iron is too heavy for you to budge: it moves you instead (see Player._magnet_line).
 
 const CELL := 2.0
 const H := 4.5
@@ -16,11 +17,13 @@ var _to := Vector3.ZERO
 var _k := 0.0
 var _fall := 0.0
 var _mat: StandardMaterial3D
+var home := Vector3.ZERO
 
 static func make(parent: Node3D, pos: Vector3) -> IronCube:
 	var c := IronCube.new()
 	parent.add_child(c)
 	c.global_position = pos
+	c.home = pos
 	return c
 
 func _ready() -> void:
@@ -61,10 +64,13 @@ func _physics_process(dt: float) -> void:
 	if not _grounded():
 		_fall += 30.0 * dt
 		global_position += Vector3.DOWN * _fall * dt
+		if global_position.y < home.y - 3.0:
+			global_position = home
+			_fall = 0.0
 		return
 	_fall = 0.0
 	var p := _player()
-	if p == null or not p.inventory.has("magnet"):
+	if p == null or not p.inventory.has("magnet") or p.small:
 		return
 	var dir := _pull_axis(p)
 	if dir == Vector3.ZERO:
@@ -110,6 +116,7 @@ func _free(dest: Vector3) -> bool:
 	q.shape = s
 	q.transform = Transform3D(Basis(), dest + Vector3.UP * (H / 2.0 + 0.05))
 	q.exclude = [get_rid()]
+	q.collision_mask = 1 | 1 << 1 | 1 << 2 # walls, bars and grates stop iron
 	return get_world_3d().direct_space_state.intersect_shape(q, 1).is_empty()
 
 func _grounded() -> bool:

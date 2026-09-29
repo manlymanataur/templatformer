@@ -69,7 +69,7 @@ static func build(lv: Node3D) -> void:
 	var gate_b := _cross_wall(rect, 96, 2, 6, true)
 	plate_b.pressed.connect(gate_b.open)
 	lv.label(Vector3(4, FLOOR + 3, 87), "in the dark Umbra floats", 28)
-	_pit(lv, Vector3(-6, 0, 87), Vector3(12, 1.5, 14), Vector3(4, FLOOR + 0.6, 78))
+	pit(lv, Vector3(-6, 0, 87), Vector3(12, 1.5, 14), Vector3(4, FLOOR + 0.6, 78))
 	marks["hall_b"] = Vector3(0.8, FLOOR + 0.6, 86)
 	marks["hall_b_plate"] = plate_b
 	marks["hall_b_gate"] = gate_b
@@ -94,7 +94,7 @@ static func build(lv: Node3D) -> void:
 	var gate_c := _cross_wall(rect, 116, 2, 6, true)
 	plate_c.pressed.connect(gate_c.open)
 	lv.label(Vector3(-4, FLOOR + 3, 99), "in your shadow it floats", 28)
-	_pit(lv, Vector3(-4, 0, 105), Vector3(16, 1.5, 10), Vector3(4, FLOOR + 0.6, 98))
+	pit(lv, Vector3(-4, 0, 105), Vector3(16, 1.5, 10), Vector3(4, FLOOR + 0.6, 98))
 	Pickup.spawn(lv, "heart", 1, Vector3(4, FLOOR + 0.8, 119))
 	marks["hall_c"] = Vector3(-6, FLOOR + 0.6, 99) # on the lantern line, just short of the railing
 	marks["hall_c_plate"] = plate_c
@@ -150,7 +150,7 @@ static func _cross_wall(rect: Callable, z: float, d0: float, d1: float, gated: b
 	return Gate.make(lintel.get_parent(), Vector3((d0 + d1) / 2.0, FLOOR + 2.0, z), Vector3(d1 - d0, 4.0, 0.3), Color(0.2, 0.2, 0.25))
 
 ## The floor of a chasm: land here and you're put back at back_to.
-static func _pit(lv: Node3D, centre: Vector3, size: Vector3, back_to: Vector3) -> void:
+static func pit(lv: Node3D, centre: Vector3, size: Vector3, back_to: Vector3) -> void:
 	var a := Area3D.new()
 	var c := CollisionShape3D.new()
 	var s := BoxShape3D.new()

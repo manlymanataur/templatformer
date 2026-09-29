@@ -14,6 +14,7 @@ const ITEMS := {
 	"umbra": {"name": "Umbra", "color": Color(0.45, 0.38, 1.0), "slot": true, "max": 1, "toggle": true},
 	# the magnet is always on: using it flips between pull (negative) and push (positive)
 	"magnet": {"name": "Magnet", "color": Color(0.3, 0.55, 1.0), "slot": true, "max": 1, "toggle": true},
+	"shrink": {"name": "Shrink", "color": Color(0.55, 0.9, 0.45), "slot": true, "max": 1, "toggle": true},
 }
 const SLOTS := 3
 
@@ -66,6 +67,8 @@ func use(slot: int, player: Player) -> bool:
 		"umbra":
 			player.toggle_umbra()
 			return true
+		"shrink":
+			return player.set_small(not player.small)
 		"magnet":
 			player.magnet_push = not player.magnet_push
 			changed.emit()

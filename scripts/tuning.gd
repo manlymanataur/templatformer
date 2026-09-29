@@ -36,6 +36,12 @@ extends Resource
 @export var umbra_speed := 10.0 ## Umbra floating in the dark
 @export var umbra_crawl_speed := 1.5 ## Umbra crawling in light
 @export var magnet_range := 14.0 ## how far your magnet reaches along a line
+@export var small_scale := 0.35 ## shrunk size, as a fraction of normal
+@export var small_speed_mult := 0.6 ## small, run and roll speed times this
+@export var small_jump_mult := 0.65 ## small, jump speed times this (height x0.42)
+@export var small_swim_speed := 3.5 ## small, paddling speed on water
+@export var magnet_fly_speed := 10.0 ## small, how fast the magnet carries you along an iron's line
+@export var magnet_fly_range := 22.0 ## small, how far along its line an iron's field reaches you
 @export var iron_speed := 6.0 ## how fast iron slides from cell to cell
 @export var boost_pad_speed := 30.0
 @export var cam_distance := 7.0
@@ -46,4 +52,4 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "accel", "friction"
 	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
 	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "spin_charge_time", "bomb_throw_speed",
-	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "boost_pad_speed", "cam_distance", "cam_lag", "cam_recenter_delay"]
+	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "boost_pad_speed", "cam_distance", "cam_lag", "cam_recenter_delay"]

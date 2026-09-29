@@ -4,11 +4,118 @@ extends CharacterBody3D
 ## In the air, gravity is always world-down.
 ## Jumps chain Mario-style: land and jump again quickly, while moving, for a higher double and triple jump.
 ## Push into a wall while falling to slide down it, press jump to kick off it.
+## After moving: a normal-size roll bursts cracked walls; your weight cracks cracked floors.
+func _touch_after_move() -> void:
+	if small:
+		return
+	if is_on_floor(): # standing still reports no collisions, so look at what's underfoot
+		var q := PhysicsRayQueryParameters3D.create(global_position, global_position + Vector3.DOWN * (radius() + 0.15), 1, [get_rid()])
+		var hit := get_world_3d().direct_space_state.intersect_ray(q)
+		if not hit.is_empty() and hit["collider"] is CrackedFloor:
+			(hit["collider"] as CrackedFloor).step()
+	for i in get_slide_collision_count():
+		var c := get_slide_collision(i)
+		var o := c.get_collider()
+		if o is CrackedWall and roll_t > 0.0 and roll_kind == "roll":
+			(o as CrackedWall).smash()
+		elif o is CrackedFloor and c.get_normal().y > 0.7:
+			(o as CrackedFloor).step()
+
+func _water() -> Water:
+	for w in get_tree().get_nodes_in_group("water"):
+		if (w as Water).holds(global_position):
+			return w
+	return null
+
+## Small, you paddle along the surface; jump to climb out.
+func _swim_step(dt: float, wish: Vector3, w: Water) -> void:
+	var hv := Vector3(velocity.x, 0, velocity.z).move_toward(wish * t.small_swim_speed, t.accel * dt)
+	velocity = hv
+	up_direction = Vector3.UP
+	global_position.y = w.surface()
+	roll_t = 0.0
+	jump_chain = 0
+	if buffer > 0.0:
+		velocity.y = t.jump_speed * t.small_jump_mult
+		global_position.y += 0.05
+		jumping = true
+		buffer = 0.0
+
+## Small, fans carry you: inside a lane, your speed along the wind is pulled to the wind's, and gravity lets go.
+func _blow(dt: float, on_floor: bool) -> void:
+	var w := Vector3.ZERO
+	for f in get_tree().get_nodes_in_group("wind"):
+		w += (f as Fan).wind_at(global_position)
+	if w == Vector3.ZERO:
+		return
+	if not on_floor:
+		velocity.y += t.gravity * dt # undo this frame's gravity: the wind holds you up
+	var d := w.normalized()
+	var grip := clampf(6.0 * dt, 0.0, 1.0)
+	velocity += d * (w.length() - velocity.dot(d)) * grip
+	if absf(d.y) < 0.5:
+		velocity.y = move_toward(velocity.y, 0.0, t.gravity * 2.0 * dt) # a sideways lane floats you along
+	if d.y > 0.5:
+		air_lock = 0.05 # lift you off the floor
+
+## Small with the magnet, the nearest iron you're lined up with (at its side, not a diagonal, clear line, in reach)
+## moves you: pull flies you to it, push flies you away. Returns the velocity to fly at, or zero.
+## Lined up against it while pulling, you cling to its side.
+func _magnet_line() -> Vector3:
+	var best: IronCube = null
+	var best_d := INF
+	var best_dir := Vector3.ZERO
+	var space := get_world_3d().direct_space_state
+	for n in get_tree().get_nodes_in_group("conductor"):
+		if not n is IronCube:
+			continue
+		var c := n as IronCube
+		var d := global_position - c.global_position
+		if d.y < -0.6 or d.y > IronCube.H - 0.5:
+			continue
+		var dir := Vector3.ZERO
+		if absf(d.x) < 1.0:
+			dir = Vector3(0, 0, signf(d.z))
+		elif absf(d.z) < 1.0:
+			dir = Vector3(signf(d.x), 0, 0)
+		else:
+			continue
+		var along := absf(d.dot(dir))
+		if along > t.magnet_fly_range or along >= best_d:
+			continue
+		var q := PhysicsRayQueryParameters3D.create(c.global_position + Vector3.UP * minf(d.y + 0.2, IronCube.H - 0.3), global_position, 1, [c.get_rid(), get_rid()])
+		if not space.intersect_ray(q).is_empty():
+			continue
+		best = c
+		best_d = along
+		best_dir = dir # from the iron toward you
+	if best == null:
+		return Vector3.ZERO
+	if magnet_push:
+		return best_dir * t.magnet_fly_speed
+	if best_d <= IronCube.CELL / 2.0 + radius() + 0.1:
+		return -best_dir * 0.001 # clinging: held in place against its side
+	return -best_dir * t.magnet_fly_speed
+
+## Carried along the iron's line at your height. You can edge sideways, which is how you slip out of the line.
+func _fly_step(wish: Vector3, fly: Vector3) -> void:
+	var d := fly.normalized()
+	var side := wish - d * wish.dot(d)
+	side.y = 0.0
+	velocity = (fly if fly.length() > 0.01 else Vector3.ZERO) + side * t.top_speed * _size_mult() * 0.6
+	velocity.y = 0.0
+	up_direction = Vector3.UP
+	roll_t = 0.0
+	jumping = false
+
 ## A quick tap of the stick (out of neutral and back) rolls that way, with brief invincibility. There's no roll button.
 ## While holding target: locked onto a target you circle it, with nothing to lock you strafe facing one way,
 ## and a tap dodges: forward rolls, sideways side hops, back backflips.
 ## The candle hat (a quick-slot item) makes you a light source and sets fire to what you touch.
 ## While you aren't giving off light, your body blocks light like any solid thing: see Lighting.
+## Shrink (a quick-slot toggle) makes you small: slower, lower jumps, but you slip through grates, float on
+## water and ride the wind, and with the magnet the iron moves you instead of you moving it: pull flies you
+## to the nearest iron in line, push flies you away from it. Growing back needs room.
 ## Health is counted in half hearts; getting hurt gives knockback and a second of invincibility.
 
 var t: Tuning
@@ -66,6 +173,10 @@ var _prev_wish_len := 0.0
 var _roll_wish := Vector3.ZERO ## direction of a tap dodge waiting to start
 var _hat: Node3D
 var _candle_light: OmniLight3D
+var small := false ## shrunk with the Shrink item
+var magnet_flying := false ## small, and the magnet is carrying you along an iron's line
+var _col: CollisionShape3D
+const RADIUS := 0.5
 
 func _ready() -> void:
 	add_to_group("player")
@@ -76,11 +187,11 @@ func _ready() -> void:
 	floor_block_on_wall = false
 	max_slides = 6
 	collision_mask = 1 | 1 << 1 | 1 << 2 # the world, bars and railings, and grates (until you shrink)
-	var col := CollisionShape3D.new()
+	_col = CollisionShape3D.new()
 	var sphere := SphereShape3D.new()
-	sphere.radius = 0.5
-	col.shape = sphere
-	add_child(col)
+	sphere.radius = RADIUS
+	_col.shape = sphere
+	add_child(_col)
 	visual = Node3D.new()
 	add_child(visual)
 	var body := MeshInstance3D.new()
@@ -172,8 +283,48 @@ func toggle_umbra() -> void:
 		umbra = Umbra.summon(self)
 	inventory.changed.emit()
 
+## Shrink or grow back. Your feet stay where they are. Growing needs room for your full size: pressed against
+## a wall you're nudged clear of it, but inside a grate or under something low it fails and you stay small.
+## Returns whether you ended up the size you asked for. force skips the room check (tests resetting you).
+func set_small(on: bool, force := false) -> bool:
+	if on == small:
+		return true
+	var r_new := RADIUS * (t.small_scale if on else 1.0)
+	var at := global_position + Vector3.UP * (r_new - radius())
+	if not on and not force:
+		var q := PhysicsShapeQueryParameters3D.new()
+		var s := SphereShape3D.new()
+		s.radius = r_new - 0.02
+		q.shape = s
+		q.collision_mask = 1 | 1 << 1 | 1 << 2
+		q.exclude = [get_rid()]
+		var room := false
+		for nudge in [Vector3.ZERO, Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT]:
+			q.transform = Transform3D(Basis(), at + (nudge as Vector3) * (r_new - radius()))
+			if get_world_3d().direct_space_state.intersect_shape(q, 1).is_empty():
+				at = q.transform.origin
+				room = true
+				break
+		if not room:
+			return false
+	small = on
+	(_col.shape as SphereShape3D).radius = r_new
+	global_position = at
+	collision_mask = 1 | 1 << 1 | (0 if small else 1 << 2) # small, grates don't stop you
+	magnet_flying = false
+	inventory.changed.emit()
+	return true
+
+func radius() -> float:
+	return RADIUS * (t.small_scale if small else 1.0)
+
+func _size_mult() -> float:
+	return t.small_speed_mult if small else 1.0
+
 func item_active(id: String) -> bool:
 	match id:
+		"shrink":
+			return small
 		"candle":
 			return candle_lit
 		"umbra":
@@ -202,6 +353,8 @@ func respawn() -> void:
 	if carrying != null:
 		carrying.queue_free()
 		carrying = null
+	if small:
+		set_small(false)
 
 func hurt(amount: int, from: Vector3) -> void:
 	if invuln > 0.0 or hp <= 0 or dodging():
@@ -321,15 +474,32 @@ func _physics_process(dt: float) -> void:
 		_start_roll(_roll_wish if _roll_wish != Vector3.ZERO else wish)
 		_roll_wish = Vector3.ZERO
 
-	if roll_t > 0.0:
+	var water := _water()
+	var fly := _magnet_line() if small and inventory.has("magnet") else Vector3.ZERO
+	magnet_flying = fly != Vector3.ZERO
+	if magnet_flying:
+		_fly_step(wish, fly)
+	elif water != null and small and global_position.y <= water.surface() + 0.05 and velocity.y <= 0.0:
+		_swim_step(dt, wish, water)
+	elif roll_t > 0.0:
 		_roll_step(dt, on_floor)
 	elif on_floor:
 		_ground_step(dt, wish)
 	else:
 		_air_step(dt, wish, jump_held)
+	if small and not magnet_flying:
+		_blow(dt, on_floor)
 
 	_was_on_floor = on_floor
 	move_and_slide()
+	_touch_after_move()
+	if water != null:
+		if small and global_position.y < water.surface() and velocity.y <= 0.0:
+			global_position.y = water.surface() # bob at the surface
+			velocity.y = 0.0
+		elif not small and global_position.y < water.surface() - 0.4:
+			global_position = water.back_to # too heavy: under you go, and you're put back on the bank
+			velocity = Vector3.ZERO
 	if global_position.y < -30.0:
 		respawn()
 	_update_visual(dt)
@@ -355,12 +525,14 @@ func _read_tap(dt: float, wish: Vector3) -> void:
 func _ground_step(dt: float, wish: Vector3) -> void:
 	coyote = t.coyote_time
 	var n := get_floor_normal()
+	if n == Vector3.ZERO: # the very first frame can report a floor without its normal
+		n = Vector3.UP
 	var v := velocity - n * velocity.dot(n)
 	var g := Vector3.DOWN * t.gravity
 	v += (g - n * g.dot(n)) * t.slope_factor * dt
 	var sp := v.length()
 	var w := wish - n * wish.dot(n)
-	var top := t.strafe_speed if target_held else t.top_speed
+	var top := (t.strafe_speed if target_held else t.top_speed) * _size_mult()
 	if w.length() > 0.05:
 		var wd := w.normalized()
 		if sp > 1.0 and v.normalized().dot(wd) < -0.3 and not target_held:
@@ -392,7 +564,7 @@ func _air_step(dt: float, wish: Vector3, jump_held: bool) -> void:
 	velocity += Vector3.DOWN * t.gravity * dt
 	var hv := Vector3(velocity.x, 0, velocity.z)
 	if wish.length() > 0.05 and wall_lock <= 0.0:
-		var cap := maxf(t.top_speed, hv.length())
+		var cap := maxf(t.top_speed * _size_mult(), hv.length())
 		hv = (hv + wish * t.air_accel * dt).limit_length(cap)
 		velocity.x = hv.x
 		velocity.z = hv.z
@@ -426,7 +598,7 @@ func _ground_jump(n: Vector3) -> void:
 	else:
 		jump_chain = 0
 	var mult: float = [1.0, t.double_jump_mult, t.triple_jump_mult][jump_chain]
-	velocity = velocity - n * velocity.dot(n) + n * t.jump_speed * mult
+	velocity = velocity - n * velocity.dot(n) + n * t.jump_speed * mult * (t.small_jump_mult if small else 1.0)
 	global_position += n * 0.05 # clear the floor so this frame's move can't read as grounded
 	jumping = true
 	buffer = 0.0
@@ -460,9 +632,9 @@ func _start_roll(wish: Vector3) -> void:
 	roll_t = t.roll_time
 	match roll_kind:
 		"roll":
-			velocity = dir * t.roll_speed
+			velocity = dir * t.roll_speed * _size_mult()
 		"sidehop":
-			velocity = dir * t.roll_speed * 0.8 + Vector3.UP * 5.0
+			velocity = dir * t.roll_speed * _size_mult() * 0.8 + Vector3.UP * 5.0
 			global_position += Vector3.UP * 0.05
 			air_lock = 0.1
 		"backflip":
@@ -473,15 +645,15 @@ func _start_roll(wish: Vector3) -> void:
 func _roll_step(dt: float, on_floor: bool) -> void:
 	roll_t -= dt
 	if roll_kind == "roll":
-		var v := roll_dir * t.roll_speed
+		var v := roll_dir * t.roll_speed * _size_mult()
 		velocity.x = v.x
 		velocity.z = v.z
 		if not on_floor:
 			velocity.y -= t.gravity * dt
 		if roll_t <= 0.0:
 			# come out of the roll at running speed
-			velocity.x = roll_dir.x * minf(t.roll_speed, t.top_speed)
-			velocity.z = roll_dir.z * minf(t.roll_speed, t.top_speed)
+			velocity.x = roll_dir.x * minf(t.roll_speed * _size_mult(), t.top_speed)
+			velocity.z = roll_dir.z * minf(t.roll_speed * _size_mult(), t.top_speed)
 	else:
 		velocity.y -= t.gravity * dt
 		if (on_floor and roll_t < t.roll_time - 0.1) or roll_t <= -0.6:
@@ -525,7 +697,7 @@ func _update_visual(dt: float) -> void:
 	var fwd := facing - up * facing.dot(up)
 	if fwd.length() < 0.01:
 		return
-	visual.global_basis = Basis.looking_at(fwd.normalized(), up)
+	visual.global_basis = Basis.looking_at(fwd.normalized(), up).scaled(Vector3.ONE * (t.small_scale if small else 1.0))
 	if roll_t > 0.0 and roll_kind != "sidehop":
 		var spin := (1.0 - roll_t / t.roll_time) * TAU * (1.0 if roll_kind == "roll" else -1.0)
 		visual.rotate_object_local(Vector3.RIGHT, -spin)
