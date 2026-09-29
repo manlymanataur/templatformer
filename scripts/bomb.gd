@@ -1,16 +1,26 @@
 class_name Bomb
-extends Node3D
-## Lit bomb. After FUSE seconds it hurts everything hurtable within RADIUS, you included.
+extends CharacterBody3D
+## Bomb. Pulled out overhead with its fuse already lit, then thrown in an arc or set down.
+## After FUSE seconds it hurts everything hurtable within RADIUS, you included (even if you're still holding it).
 
-const FUSE := 2.0
+const FUSE := 2.5
 const RADIUS := 3.5
 const DAMAGE := 2
+const GRAVITY := 30.0
 
+var holder: Player = null
 var _t := 0.0
 var _mat: StandardMaterial3D
 var _exploded := false
 
 func _ready() -> void:
+	collision_layer = 0 # nothing bumps into a bomb
+	collision_mask = 1
+	var c := CollisionShape3D.new()
+	var s := SphereShape3D.new()
+	s.radius = 0.3
+	c.shape = s
+	add_child(c)
 	var mi := MeshInstance3D.new()
 	var sm := SphereMesh.new()
 	sm.radius = 0.35
@@ -19,8 +29,16 @@ func _ready() -> void:
 	_mat = StandardMaterial3D.new()
 	_mat.albedo_color = Color(0.15, 0.15, 0.2)
 	mi.material_override = _mat
-	mi.position.y = 0.35
 	add_child(mi)
+
+func throw(v: Vector3) -> void:
+	holder = null
+	velocity = v
+
+func set_down(pos: Vector3) -> void:
+	holder = null
+	global_position = pos
+	velocity = Vector3.ZERO
 
 func _physics_process(dt: float) -> void:
 	if _exploded:
@@ -28,11 +46,22 @@ func _physics_process(dt: float) -> void:
 	_t += dt
 	var blink := fmod(_t * (3.0 + _t * 6.0), 1.0) < 0.5
 	_mat.albedo_color = Color(0.9, 0.3, 0.2) if blink else Color(0.15, 0.15, 0.2)
+	if holder != null:
+		global_position = holder.global_position + Vector3.UP * 1.0
+	else:
+		velocity.y -= GRAVITY * dt
+		if is_on_floor():
+			var hv := Vector3(velocity.x, 0, velocity.z).move_toward(Vector3.ZERO, 20.0 * dt)
+			velocity.x = hv.x
+			velocity.z = hv.z
+		move_and_slide()
 	if _t >= FUSE:
 		explode()
 
 func explode() -> void:
 	_exploded = true
+	if holder != null and holder.carrying == self:
+		holder.carrying = null
 	for n in get_tree().get_nodes_in_group("hurtable"):
 		var node := n as Node3D
 		if node.global_position.distance_to(global_position) <= RADIUS:

@@ -46,6 +46,9 @@ func _physics_process(dt: float) -> void:
 	if player.target != null:
 		var d := player.target.global_position - player.global_position
 		yaw = lerp_angle(yaw, atan2(-d.x, -d.z), clampf(8.0 * dt, 0.0, 1.0))
+	elif player.strafing:
+		# Ocarina's parallel targeting: swing behind the way you're locked facing
+		yaw = lerp_angle(yaw, atan2(-player.lock_dir.x, -player.lock_dir.z), clampf(10.0 * dt, 0.0, 1.0))
 	elif idle > t.cam_recenter_delay and hv.length() > 4.0:
 		yaw = lerp_angle(yaw, atan2(-hv.x, -hv.z), clampf(1.5 * dt, 0.0, 1.0))
 	rotation = Vector3(pitch, yaw, 0)

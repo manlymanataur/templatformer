@@ -16,12 +16,27 @@ extends Resource
 @export var coyote_time := 0.1
 @export var jump_buffer := 0.12
 @export var slope_factor := 1.0 ## 1 = slopes speed you up and slow you down like real gravity
-@export var stick_speed := 8.0 ## below this you peel off walls and ceilings
+@export var jump_combo_window := 0.15 ## land and jump again within this to chain a double/triple jump
+@export var double_jump_mult := 1.25 ## height x1.56
+@export var triple_jump_mult := 1.5 ## height x2.25
+@export var triple_min_speed := 8.0
+@export var wall_slide_speed := 4.0
+@export var wall_jump_speed := 8.0 ## away from the wall
+@export var wall_jump_up := 12.0
+@export var roll_speed := 13.0
+@export var roll_time := 0.4
+@export var roll_invuln := 0.3 ## dodge window at the start of a roll
+@export var strafe_speed := 7.0 ## top speed while holding target
+@export var spin_charge_time := 0.6
+@export var bomb_throw_speed := 7.0
+@export var bomb_throw_up := 5.0
 @export var boost_pad_speed := 30.0
 @export var cam_distance := 7.0
 @export var cam_lag := 10.0
 @export var cam_recenter_delay := 0.8
 
 const EDITABLE: Array[String] = ["top_speed", "boost_speed", "accel", "friction", "brake", "turn_rate", "turn_rate_fast",
-	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor", "stick_speed",
-	"boost_pad_speed", "cam_distance", "cam_lag", "cam_recenter_delay"]
+	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
+	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
+	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "spin_charge_time", "bomb_throw_speed",
+	"bomb_throw_up", "boost_pad_speed", "cam_distance", "cam_lag", "cam_recenter_delay"]

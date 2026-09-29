@@ -39,7 +39,7 @@ func _process(_dt: float) -> void:
 		return
 	var s := "speed %5.1f   %s   slope %2d°%s\n" % [player.speed(), "ground" if player.is_on_floor() else "air",
 		int(rad_to_deg(player.up_direction.angle_to(Vector3.UP))), "   LOCKED" if player.target else ""]
-	s += "Tab hide · [ ] pick · - = change · Backspace reset · R respawn\nF attack · 1 2 3 items · Enter inventory\n\n"
+	s += "Tab hide · [ ] pick · - = change · Backspace reset · R respawn\nF attack (hold to charge spin) · Ctrl/C roll · Shift/Z lock on · 1 2 3 items · Enter inventory\n\n"
 	for i in Tuning.EDITABLE.size():
 		var n := Tuning.EDITABLE[i]
 		s += ("> " if i == sel else "   ") + "%s  %.2f\n" % [n, t.get(n)]

@@ -49,6 +49,9 @@ func assign(slot: int, id: String) -> void:
 ## Use the item on a quick slot. Returns false when nothing happened (empty, none left, or no effect).
 func use(slot: int, player: Player) -> bool:
 	var id := slots[slot]
+	if id == "bombs" and player.carrying != null:
+		player.release_bomb() # second press throws or sets down the bomb you're holding
+		return false
 	if id == "" or count(id) <= 0:
 		return false
 	match id:
@@ -57,7 +60,7 @@ func use(slot: int, player: Player) -> bool:
 				return false
 			player.hp = player.max_hp
 		"bombs":
-			player.place_bomb()
+			player.pull_bomb()
 	counts[id] = count(id) - 1
 	changed.emit()
 	return true
