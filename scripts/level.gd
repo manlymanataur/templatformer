@@ -105,6 +105,18 @@ func boost_pad(pos: Vector3, dir: Vector3) -> void:
 	a.global_position = pos + Vector3(0, 0.5, 0)
 	a.body_entered.connect(func(b): if b is Player: b.boost(dir))
 
+func launch_pad(pos: Vector3, v: Vector3) -> void:
+	box(pos + Vector3(0, -0.45, 0), Vector3(2.4, 1, 2.4), Basis(), Color(0.3, 0.9, 0.95))
+	var a := Area3D.new()
+	var c := CollisionShape3D.new()
+	var s := BoxShape3D.new()
+	s.size = Vector3(2.4, 1.0, 2.4)
+	c.shape = s
+	a.add_child(c)
+	add_child(a)
+	a.global_position = pos + Vector3(0, 0.5, 0)
+	a.body_entered.connect(func(b): if b is Player: b.launch(v))
+
 ## Curved track: an arc of the circle with this centre, in the plane of fwd and up,
 ## from angle a0 to a1 (0 = bottom, 90 = far wall, 180 = top), drifting sideways by shift over a full turn.
 func arc(center: Vector3, r: float, a0: float, a1: float, fwd: Vector3, shift: float, width: float, color: Color) -> void:
@@ -121,7 +133,7 @@ func arc(center: Vector3, r: float, a0: float, a1: float, fwd: Vector3, shift: f
 
 func _build() -> void:
 	box(Vector3(0, -0.5, 0), Vector3(240, 1, 240), Basis(), Color(0.55, 0.75, 0.5))
-	label(Vector3(0, 3, -4), "Hold forward: boost pad, then loop")
+	label(Vector3(0, 3, -4), "Hold forward: boost pad, then quarter pipe")
 
 	# Ramps along +X, rising toward -Z
 	var ang := [10, 20, 30, 45, 60]
@@ -137,26 +149,50 @@ func _build() -> void:
 		marks["ramp%d_top" % ang[i]] = L * sin(a)
 
 	# Step heights along -X
-	var hs := [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+	# 2 m = a normal jump, 3 m = double jump, 4.5 m = running triple jump
+	var hs := [2.0, 3.0, 4.5]
+	var how := ["jump", "double jump", "triple jump"]
 	for i in hs.size():
-		var x := -14.0 - i * 5.0
-		box(Vector3(x, hs[i] / 2.0, -8.0), Vector3(3, hs[i], 3), Basis(), Color(0.6, 0.6, 0.75))
-		label(Vector3(x, hs[i] + 1.0, -8.0), "%.1f m" % hs[i])
+		var x := -14.0 - i * 8.0
+		box(Vector3(x, hs[i] / 2.0, -8.0), Vector3(4, hs[i], 4), Basis(), Color(0.6, 0.6, 0.75))
+		label(Vector3(x, hs[i] + 1.0, -8.0), "%.1f m: %s" % [hs[i], how[i]])
 		marks["step%.1f" % hs[i]] = Vector3(x, 0.6, -4.0)
 		marks["step%.1f_h" % hs[i]] = hs[i]
 
-	# Gap course: 1 m tall platforms along -X at z = +24, gaps grow. Fall in and you can walk back out.
-	var gaps := [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
+	# Gap course: 1 m tall platforms along -X at z = +24. 6 and 8 m are comfortable running jumps,
+	# 10 m needs full speed, 12 m needs a running triple jump. Fall in and you can walk back out.
+	var gaps := [6.0, 8.0, 10.0, 12.0]
 	var x := -6.0
 	box(Vector3(x, 0.5, 24.0), Vector3(6, 1, 4), Basis(), Color(0.7, 0.55, 0.8))
 	label(Vector3(x, 2.5, 24.0), "gaps")
+	var half := 3.0 # half length of the platform you're standing on
 	for g in gaps:
-		var edge := x - 3.0
-		marks["gap%d" % int(g)] = Vector3(edge + 6.0, 1.6, 24.0) # start 6 m back from the edge, running -X
-		x = edge - g - 3.0
-		box(Vector3(x, 0.5, 24.0), Vector3(6, 1, 4), Basis(), Color(0.7, 0.55, 0.8))
-		label(Vector3(x + 3.0 + g / 2.0, 2.5, 24.0), "%d m" % int(g))
+		var edge := x - half
+		marks["gap%d" % int(g)] = Vector3(edge + half * 2.0, 1.6, 24.0) # start at the back of the platform, running -X
+		marks["gap%d_edge" % int(g)] = edge
+		# the platform before the 12 m gap is a 30 m runway: room for two chain hops before the edge
+		half = 15.0 if g == 10.0 else 3.0
+		x = edge - g - half
+		box(Vector3(x, 0.5, 24.0), Vector3(half * 2.0, 1, 4), Basis(), Color(0.7, 0.55, 0.8))
+		label(Vector3(edge - g / 2.0, 2.5, 24.0), "%d m" % int(g) + (" (triple jump)" if g > 10.0 else ""))
 	marks["gap_y"] = 1.0
+
+	# Wall-jump shaft: a 3 m gap between a wall and a 10 m block. Kick back and forth to the top.
+	box(Vector3(-2.0, 5.0, -40), Vector3(1, 10, 4), Basis(), Color(0.55, 0.65, 0.8))
+	box(Vector3(4.5, 5.0, -40), Vector3(6, 10, 4), Basis(), Color(0.55, 0.65, 0.8))
+	label(Vector3(1.0, 11.5, -40), "wall jump up")
+	marks["shaft"] = Vector3(0.0, 0.6, -40)
+	marks["shaft_top"] = 10.0
+
+	# Launch pads: straight up onto a 6 m platform, and a long arc to a platform 14 m away
+	launch_pad(Vector3(14, 0, -41.8), Vector3(0, 20, -4))
+	box(Vector3(14, 3, -47), Vector3(6, 6, 6), Basis(), Color(0.5, 0.8, 0.8))
+	label(Vector3(14, 3, -40), "launch pad")
+	marks["pad_up"] = Vector3(14, 0.6, -38)
+	launch_pad(Vector3(26, 0, -40), Vector3(0, 16, -16))
+	box(Vector3(26, 0.5, -58), Vector3(6, 1, 6), Basis(), Color(0.5, 0.8, 0.8))
+	label(Vector3(26, 3, -38), "launch across")
+	marks["pad_far"] = Vector3(26, 0.6, -36)
 
 	# Quarter pipe facing +Z, off to the side
 	boost_pad(Vector3(-40, 0, -30), Vector3.FORWARD)

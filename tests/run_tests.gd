@@ -25,6 +25,10 @@ func place(pos: Vector3, vel := Vector3.ZERO) -> void:
 	p.velocity = vel
 	p.up_direction = Vector3.UP
 	await frames(3)
+	for i in 30: # settle onto the ground before the test starts
+		if p.is_on_floor():
+			break
+		await physics_frame
 	p.velocity = vel
 
 func check(name: String, ok: bool, detail: String) -> void:
@@ -117,9 +121,9 @@ func _run() -> void:
 		await place(start, Vector3(-t.top_speed, 0, 0))
 		p.ai_move = Vector2(-1, 0)
 		# jump when 0.6 m from the edge
-		var edge_x := start.x - 6.0
+		var edge_x: float = m["gap%d_edge" % g]
 		var flying := false
-		for i in 120:
+		for i in 240:
 			await physics_frame
 			if p.global_position.x < edge_x + 0.6 and not p.ai_jump:
 				p.ai_jump = true
@@ -168,10 +172,20 @@ func _fresh_player(pos: Vector3) -> void:
 	p.invuln = 0.0
 	p.inventory = Inventory.new()
 	p.facing = Vector3.FORWARD
+	p.target = null
+	p.roll_t = 0.0
+	p.jump_chain = 0
+	if p.carrying != null:
+		p.carrying.queue_free()
+		p.carrying = null
+	p.spear.busy = 0.0
+	p.spear.combo_step = 0
+	p.attack_held_t = 0.0
 
 func _monster_ahead(dist: float) -> Monster:
 	var mon := Monster.spawn(level, p.global_position + Vector3(0, 0.2, -dist))
 	mon.drop_heart = false
+	mon.home = mon.global_position
 	return mon
 
 func _combat_tests() -> void:
@@ -265,12 +279,14 @@ func _combat_tests() -> void:
 	mon.stun = 10.0
 	var far_mon := _monster_ahead(8.0)
 	far_mon.stun = 10.0
-	p.ai_item = 0
+	p.ai_item = 0 # pull one out
+	await frames(3)
+	p.ai_item = 0 # standing still: set it down in front
 	await frames(3)
 	p.ai_move = Vector2(0, 1) # walk away from the bomb
 	await frames(40)
 	p.ai_move = Vector2.ZERO
-	await frames(100)
+	await frames(130)
 	check("bomb hurts a blob in range", is_instance_valid(mon) and mon.hp == 1, "hp %d" % (mon.hp if is_instance_valid(mon) else 0))
 	check("bomb spares a blob out of range", far_mon.hp == 3, "hp %d" % far_mon.hp)
 	check("you escaped your own bomb", p.hp == p.max_hp, "hp %d" % p.hp)
@@ -287,3 +303,283 @@ func _combat_tests() -> void:
 	check("lock-on targets monsters", p.target == mon, "")
 	p.ai_target = false
 	mon.queue_free()
+
+	await _move_tests(arena)
+
+func _apex_of_next_jump() -> float:
+	# hold jump from the moment we leave the ground until we come back down
+	var y0 := p.global_position.y
+	p.ai_jump = true
+	var top := y0
+	var left := false
+	for i in 120:
+		await physics_frame
+		top = maxf(top, p.global_position.y)
+		if not p.is_on_floor():
+			left = true
+		elif left:
+			break
+	p.ai_jump = false
+	return top - y0
+
+func _move_tests(arena: Vector3) -> void:
+	var t: Tuning = level.t
+	var m: Dictionary = level.marks
+	var mon: Monster
+
+	# 20. Jump chain: single, double, triple while running, each re-jumped on landing
+	await _fresh_player(Vector3(90, 0.6, 100))
+	p.velocity = Vector3(0, 0, -t.top_speed)
+	p.ai_move = Vector2(0, -1)
+	await frames(10)
+	var heights := []
+	for k in 3:
+		heights.append(await _apex_of_next_jump())
+		# jump is released on landing; press again next frame for the chain
+		await physics_frame
+	p.ai_move = Vector2.ZERO
+	var base := t.jump_speed * t.jump_speed / (2.0 * t.gravity)
+	var want := [base, base * pow(t.double_jump_mult, 2), base * pow(t.triple_jump_mult, 2)]
+	var ok := true
+	for k in 3:
+		ok = ok and absf(heights[k] - want[k]) < 0.35
+	check("running jump chain: single, double, triple", ok, "%.1f / %.1f / %.1f m, expected %.1f / %.1f / %.1f" % [heights[0], heights[1], heights[2], want[0], want[1], want[2]])
+
+	# 21. Standing still, jumps don't chain
+	await _fresh_player(Vector3(90, 0.6, 60))
+	await frames(10)
+	var h1 := await _apex_of_next_jump()
+	await physics_frame
+	var h2 := await _apex_of_next_jump()
+	check("standing jumps don't chain", absf(h2 - h1) < 0.2, "%.1f then %.1f m" % [h1, h2])
+
+	# 22. Triple jump clears the 12 m gap that a single jump can't: hop, hop on landing, triple off the edge
+	var start: Vector3 = m["gap12"]
+	await _fresh_player(start)
+	p.velocity = Vector3(-t.top_speed, 0, 0)
+	p.ai_move = Vector2(-1, 0)
+	var edge_x: float = m["gap12_edge"]
+	var hops := 0
+	var landed_far := false
+	for i in 300:
+		await physics_frame
+		if p.is_on_floor() and not p.ai_jump:
+			# first hop 24 m out (two chain hops cover about 22 m), then re-jump on each landing
+			if hops == 0 and p.global_position.x < edge_x + 24.0 or hops in [1, 2]:
+				p.ai_jump = true
+				hops += 1
+		elif not p.is_on_floor() and p.ai_jump and p.velocity.y < 0.0:
+			p.ai_jump = false
+		if hops >= 3 and p.is_on_floor() and p.global_position.x < edge_x - 12.0:
+			landed_far = p.global_position.y > m["gap_y"]
+			break
+		if p.global_position.y < -1.0:
+			break
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	check("triple jump clears 12 m", landed_far, "ended x %.1f y %.1f after %d hops" % [p.global_position.x, p.global_position.y, hops])
+
+	# 23. Wall jumps climb the 10 m shaft
+	await _fresh_player(m["shaft"])
+	var dir := -1.0
+	p.ai_move = Vector2(dir, 0)
+	p.ai_jump = true
+	var hi := 0.0
+	for i in 360:
+		await physics_frame
+		hi = maxf(hi, p.global_position.y)
+		if p.is_on_wall() and not p.is_on_floor():
+			if p.ai_jump:
+				p.ai_jump = false
+			else:
+				p.ai_jump = true
+				dir = -dir
+				p.ai_move = Vector2(dir, 0)
+		elif p.ai_jump and p.velocity.y < 0.0 and not p.is_on_floor():
+			p.ai_jump = false
+		if p.global_position.y > float(m["shaft_top"]) + 0.3 and p.is_on_floor():
+			break
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	check("wall jumps reach the top of the 10 m shaft", hi > float(m["shaft_top"]), "peak %.1f m" % hi)
+
+	# 24. Wall slide: pushing into a wall caps your fall speed
+	await _fresh_player(m["shaft"] + Vector3(-1.0, 8.0, 0))
+	p.ai_move = Vector2(-1, 0)
+	var fastest := 0.0
+	for i in 40:
+		await physics_frame
+		if i > 20:
+			fastest = maxf(fastest, -p.velocity.y)
+	p.ai_move = Vector2.ZERO
+	check("wall slide caps fall speed", fastest <= t.wall_slide_speed + 0.5, "fastest fall %.1f m/s" % fastest)
+
+	# 25. Roll: covers ground fast and dodges a hit early on
+	await _fresh_player(arena)
+	var x0 := p.global_position
+	p.ai_roll = true
+	await frames(3)
+	p.hurt(1, p.global_position + Vector3.FORWARD)
+	var dodged := p.hp == p.max_hp
+	await frames(24)
+	var dist := (p.global_position - x0).length()
+	check("roll dodges a hit", dodged, "hp %d" % p.hp)
+	check("roll covers ground", dist > 4.0, "%.1f m in 0.45 s" % dist)
+
+	# 26. Locked on: roll sideways = side hop, roll back = backflip
+	await _fresh_player(arena)
+	mon = _monster_ahead(6.0)
+	mon.stun = 20.0
+	p.ai_target = true
+	await frames(10)
+	x0 = p.global_position
+	p.ai_move = Vector2(1, 0)
+	p.ai_roll = true
+	await frames(20)
+	var d := p.global_position - x0
+	check("locked-on side hop moves sideways", absf(d.x) > 2.0 and absf(d.z) < 1.0 and p.roll_kind == "sidehop", "moved %s" % [d.snapped(Vector3(0.1, 0.1, 0.1))])
+	await frames(30)
+	x0 = p.global_position
+	var away := -p._flat_facing() # stick pulled back, relative to the camera that faces the target
+	p.ai_move = Vector2(away.x, away.z)
+	p.ai_roll = true
+	var top := 0.0
+	for i in 40:
+		await physics_frame
+		top = maxf(top, p.global_position.y - x0.y)
+	d = p.global_position - x0
+	var went_back := Vector3(d.x, 0, d.z).dot(away)
+	check("locked-on backflip goes up and back", top > 2.0 and went_back > 1.5 and p.roll_kind == "backflip", "up %.1f, back %.1f" % [top, went_back])
+	p.ai_move = Vector2.ZERO
+	p.ai_target = false
+	mon.queue_free()
+
+	# 27. Strafe: holding target with nothing nearby keeps you facing forward while moving sideways
+	await _fresh_player(Vector3(90, 0.6, 20))
+	p.ai_target = true
+	await frames(3)
+	p.ai_move = Vector2(1, 0)
+	var fastest_strafe := 0.0
+	for i in 60:
+		await physics_frame
+		fastest_strafe = maxf(fastest_strafe, p.flat_speed())
+	check("strafe keeps facing and uses strafe speed", p.facing.dot(Vector3.FORWARD) > 0.95 and fastest_strafe <= t.strafe_speed + 0.2,
+		"facing dot %.2f, speed %.1f" % [p.facing.dot(Vector3.FORWARD), fastest_strafe])
+	p.ai_move = Vector2.ZERO
+	p.ai_target = false
+
+	# 28. Quick combo: jab, jab, sweep = 1 + 1 + 2 damage
+	await _fresh_player(arena)
+	p.inventory.add("spear")
+	mon = _monster_ahead(1.6)
+	mon.hp = 10
+	var seq := []
+	for k in 3:
+		mon.global_position = p.global_position + Vector3(0, 0.1, -1.6)
+		mon.velocity = Vector3.ZERO
+		mon.stun = 5.0
+		p.ai_attack = true
+		await frames(int(Spear.MOVES[Spear.COMBO[k]]["dur"] * 60.0) + 4)
+		seq.append(mon.hp)
+	check("quick combo: jab, jab, sweep", seq == [9, 8, 6], "hp after each %s" % [seq])
+
+	# 29. Waiting too long restarts the combo at a jab
+	await frames(40)
+	mon.global_position = p.global_position + Vector3(0, 0.1, -1.6)
+	var before: int = mon.hp
+	p.ai_attack = true
+	await frames(20)
+	check("combo resets after a pause", before - mon.hp == 1 and p.spear.move == "jab", "took %d, move %s" % [before - mon.hp, p.spear.move])
+	mon.queue_free()
+
+	# 30. Charged spin hits in front and behind
+	await _fresh_player(arena)
+	p.inventory.add("spear")
+	var front := _monster_ahead(2.0)
+	var back := _monster_ahead(-2.0)
+	for mm in [front, back]:
+		mm.stun = 20.0
+		mm.hp = 10
+	p.ai_attack_held = true
+	await frames(int(t.spin_charge_time * 60.0) + 25)
+	for mm in [front, back]:
+		mm.hp = 10 # ignore the opening jab
+	p.ai_attack_held = false
+	await frames(35)
+	check("charged spin hits all around", front.hp == 8 and back.hp == 8, "front %d, back %d" % [front.hp, back.hp])
+	front.queue_free()
+	back.queue_free()
+
+	# 31. Long slash: attacking at full speed lunges and hits from further away
+	await _fresh_player(Vector3(90, 0.6, -20))
+	p.inventory.add("spear")
+	p.velocity = Vector3(0, 0, -t.top_speed)
+	p.ai_move = Vector2(0, -1)
+	await frames(5)
+	mon = _monster_ahead(4.5)
+	mon.stun = 20.0
+	p.ai_move = Vector2.ZERO
+	p.ai_attack = true
+	await frames(30)
+	check("running long slash", p.spear.move == "lunge" and mon.hp == 1, "move %s, blob hp %d" % [p.spear.move, mon.hp])
+	mon.queue_free()
+
+	# 32. Air slash hits a blob below and in front
+	await _fresh_player(arena)
+	p.inventory.add("spear")
+	mon = _monster_ahead(1.5)
+	mon.stun = 20.0
+	p.ai_jump = true
+	await frames(12)
+	p.ai_jump = false
+	p.ai_attack = true
+	await frames(40)
+	check("air slash", p.spear.move == "air" and mon.hp == 1, "move %s, blob hp %d" % [p.spear.move, mon.hp])
+	mon.queue_free()
+
+	# 33. Bombs: thrown while moving lands a few metres away, set down while still lands at your feet
+	await _fresh_player(Vector3(90, 0.6, -60))
+	p.inventory.add("bombs", 5)
+	p.ai_item = 0
+	await frames(3)
+	var held := p.carrying
+	p.ai_move = Vector2(0, -1)
+	await frames(10)
+	var throw_from := p.global_position
+	p.ai_item = 0
+	await frames(3)
+	p.ai_move = Vector2.ZERO
+	await frames(60)
+	var throw_dist := Vector2(held.global_position.x - throw_from.x, held.global_position.z - throw_from.z).length()
+	check("thrown bomb lands a few metres ahead", throw_dist > 3.5 and throw_dist < 9.0, "%.1f m" % throw_dist)
+	await frames(120) # let it go off
+	await _fresh_player(Vector3(90, 0.6, -80))
+	p.inventory.add("bombs", 5)
+	p.ai_item = 0
+	await frames(3)
+	held = p.carrying
+	p.ai_item = 0
+	await frames(30)
+	var set_dist := Vector2(held.global_position.x - p.global_position.x, held.global_position.z - p.global_position.z).length()
+	check("bomb set down at your feet", set_dist < 1.5, "%.1f m" % set_dist)
+	await frames(150)
+
+	# 34. Launch pads
+	await _fresh_player(m["pad_up"])
+	p.ai_move = Vector2(0, -1)
+	hi = 0.0
+	for i in 120:
+		await physics_frame
+		hi = maxf(hi, p.global_position.y)
+		if i > 20 and p.is_on_floor():
+			p.ai_move = Vector2.ZERO
+	await frames(20)
+	check("launch pad lifts you onto the 6 m platform", hi > 6.5 and p.global_position.y > 6.0, "peak %.1f, ended y %.1f" % [hi, p.global_position.y])
+	await _fresh_player(m["pad_far"])
+	p.ai_move = Vector2(0, -1)
+	for i in 150:
+		await physics_frame
+		if i > 30 and p.is_on_floor():
+			p.ai_move = Vector2.ZERO
+	check("launch pad throws you onto the far platform", p.global_position.y > 1.0 and p.global_position.z < -54.0,
+		"ended y %.1f z %.1f" % [p.global_position.y, p.global_position.z])
