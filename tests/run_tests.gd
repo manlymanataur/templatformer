@@ -560,8 +560,10 @@ func _move_tests(arena: Vector3) -> void:
 	p.ai_jump = true
 	await frames(12)
 	p.ai_jump = false
+	p.ai_target = true # locked on, the air attack is the spear's (without lock-on it's a ground pound)
 	p.ai_attack = true
 	await frames(40)
+	p.ai_target = false
 	check("air slash", p.spear.move == "air" and mon.hp == 1, "move %s, blob hp %d" % [p.spear.move, mon.hp])
 	mon.queue_free()
 
@@ -1581,11 +1583,13 @@ func _moves_yard_tests(arena: Vector3) -> void:
 	await frames(30)
 	check("jumping into spikes hurts", p.hp < p.max_hp, "hp %d of %d" % [p.hp, p.max_hp])
 
-	# 72. Homing attack: an air attack near spikes homes in and pogos you up unharmed; two climb the 8 m ledge
+	# 72. Homing attack: a locked-on air attack near spikes homes in and pogos you up unharmed; two climb the
+	# 8 m ledge. The lock-on stays on the first spike ball, and the second air attack still chains to the next.
 	await _fresh_player(m["moves_pogo"])
 	p.inventory.add("spear")
 	p.ai_move = Vector2(0, -0.4)
 	p.ai_jump = true
+	p.ai_target = true
 	var bounces := 0
 	var was_homing := false
 	for i in 360:
@@ -1599,9 +1603,11 @@ func _moves_yard_tests(arena: Vector3) -> void:
 		if bounces >= 2:
 			p.ai_move = Vector2(0, -1)
 			p.ai_jump = false
+			p.ai_target = false
 		if bounces >= 2 and p.is_on_floor():
 			break
 	p.ai_attack = false
+	p.ai_target = false
 	p.ai_move = Vector2.ZERO
 	check("homing pogo: two spikes (%.0f m/s bounce) reach the 8 m ledge unharmed" % t.pogo_speed,
 		bounces == 2 and p.global_position.y > 8.3 and p.hp == p.max_hp, "bounces %d, ended y %.1f, hp %d" % [bounces, p.global_position.y, p.hp])
@@ -1615,12 +1621,14 @@ func _moves_yard_tests(arena: Vector3) -> void:
 	p.ai_jump = true
 	await frames(10)
 	p.ai_jump = false
+	p.ai_target = true
 	p.ai_attack = true
 	var rose := false
 	for i in 60:
 		await physics_frame
 		rose = rose or (mon.hp < 10 and p.velocity.y > t.pogo_speed * 0.8)
 	p.ai_attack = false
+	p.ai_target = false
 	check("homing onto a blob 4 m away hits it once and bounces", mon.hp == 8 and rose, "blob hp %d, bounced %s" % [mon.hp, rose])
 	mon.queue_free()
 
@@ -1699,12 +1707,12 @@ func _combo_tests(arena: Vector3) -> void:
 	var m: Dictionary = level.marks
 	var t: Tuning = level.t
 
-	# 78. Ground pound: context in the air drops you at pound_speed; jumping right after is a high jump
+	# 78. Ground pound: attack in the air without lock-on drops you at pound_speed; jumping right after is a high jump
 	await _fresh_player(arena)
 	p.ai_jump = true
 	await frames(20)
 	p.ai_jump = false
-	p.ai_context = true
+	p.ai_attack = true
 	var fastest := 0.0
 	for i in 60:
 		await physics_frame
@@ -1732,7 +1740,7 @@ func _combo_tests(arena: Vector3) -> void:
 		b.hp = 10
 		b.drop_heart = false
 	await _hover(arena + Vector3(0, 4, 0))
-	p.ai_context = true
+	p.ai_attack = true
 	var bounced := false
 	var up := 0.0
 	for i in 60:
@@ -1744,9 +1752,11 @@ func _combo_tests(arena: Vector3) -> void:
 	p.inventory.add("spear")
 	p.facing = Vector3.FORWARD
 	await frames(8)
+	p.ai_target = true # locked on, the air attack homes, and not only on the lock-on target
 	p.ai_attack = true
 	await frames(40)
-	check("pound onto a blob hits it and bounces; the air attack chains onto the next", bounced and b1.hp == 8 and b2.hp == 8,
+	p.ai_target = false
+	check("pound onto a blob hits it and bounces; the locked-on air attack chains onto the next", bounced and b1.hp == 8 and b2.hp == 8,
 		"bounced %s (up %.1f m/s), first blob %d, second %d" % [bounced, up, b1.hp, b2.hp])
 	b1.queue_free()
 	b2.queue_free()
@@ -1754,7 +1764,7 @@ func _combo_tests(arena: Vector3) -> void:
 	# 80. Pound onto spikes bounces you off them unharmed
 	await _fresh_player(Vector3(0, 0.6, -70))
 	await _hover(Vector3(0, 7.0, -74))
-	p.ai_context = true
+	p.ai_attack = true
 	bounced = false
 	for i in 60:
 		await physics_frame
@@ -1766,7 +1776,7 @@ func _combo_tests(arena: Vector3) -> void:
 	p.ai_jump = true
 	await frames(15)
 	p.ai_jump = false
-	p.ai_context = true
+	p.ai_attack = true
 	await frames(5)
 	p.ai_move = Vector2(0, -1)
 	var rolled := false
@@ -1795,7 +1805,7 @@ func _combo_tests(arena: Vector3) -> void:
 	# 82. Pound onto a slope: the fall becomes speed downhill
 	await _fresh_player(arena)
 	await _hover(Vector3(m["ramp30"].x, 7.0, -11.0))
-	p.ai_context = true
+	p.ai_attack = true
 	var slide := 0.0
 	for i in 60:
 		await physics_frame
@@ -1895,7 +1905,7 @@ func _challenge_tests(arena: Vector3) -> void:
 		elif p.ai_jump and p.velocity.y < 0.0:
 			p.ai_jump = false
 		if p.pound_t < 0.0 and not p.is_on_floor() and bounces < 4 and absf(z - spikes[bounces]) < 0.6:
-			p.ai_context = true
+			p.ai_attack = true
 			bounces += 1
 	p.ai_jump = false
 	p.ai_move = Vector2.ZERO
@@ -1911,7 +1921,7 @@ func _challenge_tests(arena: Vector3) -> void:
 	p.ai_jump = true
 	await frames(8)
 	p.ai_jump = false
-	p.ai_context = true # pound on the start platform
+	p.ai_attack = true # pound on the start platform
 	for i in 900:
 		await physics_frame
 		if c.cleared:
@@ -1926,7 +1936,7 @@ func _challenge_tests(arena: Vector3) -> void:
 		for k in range(1, 4):
 			var mid := o.z - k * 14.0 - 2.0
 			if p.pound_t < 0.0 and p.velocity.y < 0.0 and not p.is_on_floor() and absf(z - mid) < 0.8 and p.global_position.y > o.y + 4.5:
-				p.ai_context = true # over the next platform: pound down onto it
+				p.ai_attack = true # over the next platform: pound down onto it
 	p.ai_jump = false
 	p.ai_move = Vector2.ZERO
 	check("long jump room: pound, roll, long-jump over three %.0f m gaps to the star" % 10.0, c.cleared and longs >= 3, "cleared %s, long jumps %d" % [c.cleared, longs])
@@ -1982,11 +1992,11 @@ func _colossus_tests() -> void:
 	await frames(30)
 	var plate_after_spear := col.plate != null
 	await _hover(col.to_global(Vector3(0, 16.5, 1)))
-	p.ai_context = true
+	p.ai_attack = true
 	await frames(60)
 	var cracked := col.plate == null and col.sigils[0].opened
 	await _hover(col.to_global(Vector3(0, 16.0, 1)))
-	p.ai_context = true
+	p.ai_attack = true
 	await frames(60)
 	check("a pound cracks the colossus's back plate (the spear can't), and a second pound strikes the sigil under it",
 		plate_after_spear and cracked and col.sigils[0].struck and not col.felled,
