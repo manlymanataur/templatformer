@@ -14,6 +14,12 @@ extends CharacterBody3D
 ## through grates and bars, float on water and ride the wind. With the magnet, iron moves you instead of you
 ## moving it: pull flies you to the nearest iron in line, push flies you away from it. Growing back needs room.
 ## Health is counted in half hearts; getting hurt gives knockback and a second of invincibility.
+## The poleaxe comes with a shield (the guard button). Guarding you walk at guard_speed; a hit from in front is
+## blocked (it pushes you back, harder for heavy hits, and a heavy hit with a wall right behind you breaks your
+## guard). Raising the shield just as a hit lands is a perfect guard: the attacker reels open, arrows fly back,
+## and your next sweet-spot hit is stronger. Guard and stand still for brace_time to brace: something charging
+## onto your point faster than impale_speed is impaled. Guard in the air and land holding it to shield surf.
+## Locked on at the poleaxe's measure (focus_near to focus_far), focus builds; full, the next attack is a flash step.
 
 var t: Tuning
 var cam_basis := Basis() ## yaw-only camera basis; stick input is read relative to it
@@ -29,6 +35,7 @@ var ai_attack := false
 var ai_attack_held := false
 var ai_item := -1
 var ai_context := false ## presses the context button for one frame
+var ai_guard := false ## holds the guard button
 var _ai_jump_prev := false
 
 var coyote := 0.0
@@ -59,7 +66,17 @@ var invuln := 0.0
 var god := false ## debug menu: nothing hurts you
 const INVULN_TIME := 1.0
 var inventory := Inventory.new()
-var spear: Spear
+var poleaxe: Poleaxe
+var guard_t := -1.0 ## seconds since the shield went up, -1 while it's down
+var still_t := 0.0 ## seconds guarding without moving: brace_time of it braces
+var parry_t := 0.0 ## after a perfect guard: the next sweet-spot hit is stronger
+var guard_break_t := 0.0 ## a heavy hit broke your guard: you're reeling
+var surfing := false ## riding your shield down the ground
+var focus_meter := 0.0 ## 0-1, builds while locked on at the poleaxe's measure
+var flash_t := 0.0 ## the flash step's dash
+var _guard_held := false
+var _surf_hit := {} ## monsters a surf bumped recently, and when
+var _shield: MeshInstance3D
 var carrying: Bomb = null
 var attack_held_t := 0.0
 var candle_lit := false ## wearing the lit candle hat
@@ -135,9 +152,17 @@ func _ready() -> void:
 	nose.position = Vector3(0, 0.1, -0.45)
 	nose.material_override = _mat(Color(0.95, 0.85, 0.7))
 	visual.add_child(nose)
-	spear = Spear.new()
-	spear.player = self
-	visual.add_child(spear)
+	poleaxe = Poleaxe.new()
+	poleaxe.player = self
+	visual.add_child(poleaxe)
+	_shield = MeshInstance3D.new()
+	var shm := BoxMesh.new()
+	shm.size = Vector3(0.75, 0.8, 0.1)
+	_shield.mesh = shm
+	var sm := _mat(Color(0.35, 0.45, 0.7))
+	sm.metallic = 0.5
+	_shield.material_override = sm
+	visual.add_child(_shield)
 	add_to_group("light_sources")
 	_hat = Node3D.new()
 	_hat.position = Vector3(0, 0.45, 0)
@@ -296,6 +321,9 @@ func respawn() -> void:
 	hp = max_hp
 	invuln = 0.0
 	roll_t = 0.0
+	surfing = false
+	guard_break_t = 0.0
+	focus_meter = 0.0
 	if carrying != null:
 		carrying.queue_free()
 		carrying = null
@@ -477,13 +505,17 @@ func _pick_bomb() -> bool:
 			return true
 	return false
 
-func hurt(amount: int, from: Vector3) -> void:
+## by is what hit you (a monster, an arrow), if anything; heavy hits push a block back hard and can break it.
+func hurt(amount: int, from: Vector3, by: Node = null, heavy := false) -> void:
 	if dodging() and hp > 0:
 		Hitfx.slow(get_tree(), t) # a perfect dodge: the world slows down while you don't
 		return
 	if god or invuln > 0.0 or hp <= 0:
 		return
+	if guarding() and _guard(from, by, heavy):
+		return
 	hp -= amount
+	focus_meter = 0.0
 	invuln = INVULN_TIME
 	roll_t = 0.0
 	var away := global_position - from
@@ -495,6 +527,53 @@ func hurt(amount: int, from: Vector3) -> void:
 	air_lock = 0.1
 	if hp <= 0:
 		respawn()
+
+## Can the shield go up right now? (The poleaxe and shield come together.)
+func can_guard() -> bool:
+	return inventory.has("poleaxe") and not hands_full() and guard_break_t <= 0.0 and roll_t <= 0.0 and pound_t < 0.0 \
+		and homing == null and pilot == null and rail == null and hang == Vector3.ZERO and climbing == null and grapple_t <= 0.0
+func guarding() -> bool:
+	return guard_t >= 0.0
+func braced() -> bool:
+	return guarding() and still_t >= t.brace_time and is_on_floor() and not surfing
+
+## A hit coming at your shield. Returns true if the shield took it.
+func _guard(from: Vector3, by: Node, heavy: bool) -> bool:
+	var dir := from - global_position
+	dir.y = 0.0
+	dir = dir.normalized() if dir.length() > 0.01 else _flat_facing()
+	if _flat_facing().dot(dir) < 0.3:
+		return false # from the side or behind: the shield doesn't cover it
+	if braced() and by is Monster and Vector2((by as Monster).velocity.x, (by as Monster).velocity.z).length() > t.impale_speed:
+		# it ran onto your point
+		(by as Monster).strike(int(t.impale_damage), global_position, {"head": "point", "stagger": true, "knock": 3.0})
+		if is_instance_valid(by):
+			(by as Monster).stun = maxf((by as Monster).stun, t.impale_stun)
+		poleaxe.stuck_t = t.stuck_time
+		Hitfx.hit(get_tree(), (by as Node3D).global_position if is_instance_valid(by) else from, t, 1.6)
+		return true
+	if guard_t < t.perfect_guard:
+		parry_t = t.parry_time
+		if by is Arrow:
+			(by as Arrow).reflect()
+		elif by != null and by.has_method("parried"):
+			by.parried()
+		Hitfx.hit(get_tree(), global_position + dir * 0.6, t, 1.2)
+		return true
+	var push := t.guard_push_heavy if heavy else t.guard_push
+	if heavy:
+		var q := PhysicsRayQueryParameters3D.create(global_position, global_position - dir * (radius() + t.guard_wall), 1, [get_rid()])
+		if not get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+			# nowhere to give ground: the guard breaks
+			guard_break_t = t.guard_break
+			guard_t = -1.0
+			velocity = Vector3(0, velocity.y, 0)
+			Hitfx.shake(get_tree(), 0.2)
+			return true
+	velocity.x = -dir.x * push
+	velocity.z = -dir.z * push
+	Hitfx.sparks(get_tree(), global_position + dir * 0.6, 0.7)
+	return true
 
 func _flat_facing() -> Vector3:
 	var f := Vector3(facing.x, 0, facing.z)
@@ -532,6 +611,7 @@ func _physics_process(dt: float) -> void:
 	var attack_held: bool
 	var item_pressed := -1
 	var context_pressed := false
+	var guard_held: bool
 	if ai:
 		jump_pressed = ai_jump and not _ai_jump_prev
 		jump_held = ai_jump
@@ -541,6 +621,7 @@ func _physics_process(dt: float) -> void:
 		attack_held = ai_attack or ai_attack_held
 		item_pressed = ai_item
 		context_pressed = ai_context
+		guard_held = ai_guard
 		ai_attack = false
 		ai_item = -1
 		ai_context = false
@@ -551,6 +632,7 @@ func _physics_process(dt: float) -> void:
 		attack_pressed = Input.is_action_just_pressed("attack")
 		attack_held = Input.is_action_pressed("attack")
 		context_pressed = Input.is_action_just_pressed("context")
+		guard_held = Input.is_action_pressed("guard")
 		for i in Inventory.SLOTS:
 			if Input.is_action_just_pressed("item_%d" % (i + 1)):
 				item_pressed = i
@@ -572,6 +654,7 @@ func _physics_process(dt: float) -> void:
 		attack_pressed = false
 		attack_held = false
 		target_held = false
+		guard_held = false
 	if leash != null and is_instance_valid(leash):
 		leash.lead = pilot if pilot != null else self # whoever you steer drags the other at full length
 	invuln = maxf(invuln - dt, 0.0)
@@ -590,21 +673,30 @@ func _physics_process(dt: float) -> void:
 	elif pound_t >= 0.0:
 		pass # mid-pound: the attack button waits until you land or bounce
 	elif attack_pressed and not is_on_floor() and not target_held and _can_pound():
-		pound_t = 0.0 # air attack without lock-on: ground pound (no spear needed)
+		pound_t = 0.0 # air attack without lock-on: ground pound (no poleaxe needed)
 		_pound_ledge = _ledge_up_t < 0.5
-	elif inventory.has("spear") and carrying == null:
-		if attack_pressed and not is_on_floor() and _start_homing():
+	elif inventory.has("poleaxe") and carrying == null and guard_break_t <= 0.0:
+		if attack_pressed and not is_on_floor() and not guarding() and _start_homing():
 			pass
+		elif attack_pressed and focus_meter >= 1.0 and is_on_floor() and not guarding() and _focus_target() != null:
+			_flash_step()
 		elif attack_pressed:
-			spear.press()
-		# hold attack to charge a spin; release to let it go
-		if attack_held:
-			attack_held_t += dt
-		else:
-			if attack_held_t >= t.spin_charge_time and is_on_floor():
-				spear.spin()
-			attack_held_t = 0.0
-		spear.charged = attack_held_t >= t.spin_charge_time
+			poleaxe.press()
+		# hold attack and the swing waits; let go after hammer_hold for the hammer, after spin_charge_time to spin
+		attack_held_t = attack_held_t + dt if attack_held else 0.0
+	poleaxe.button = attack_held and pilot == null
+
+	# the shield
+	guard_break_t = maxf(guard_break_t - dt, 0.0)
+	parry_t = maxf(parry_t - dt, 0.0)
+	if guard_held and can_guard():
+		guard_t = guard_t + dt if guard_t >= 0.0 else 0.0
+	else:
+		guard_t = -1.0
+		surfing = false
+	_guard_held = guard_held
+	still_t = still_t + dt if guarding() and flat_speed() < 0.5 and _wish().length() < 0.2 else 0.0
+	_update_focus(dt)
 
 	# targeting and strafing
 	var had_strafe := strafing
@@ -613,7 +705,7 @@ func _physics_process(dt: float) -> void:
 	if strafing and not had_strafe:
 		lock_dir = _flat_facing()
 
-	var wish := _wish() if pilot == null else Vector3.ZERO
+	var wish := _wish() if pilot == null and guard_break_t <= 0.0 else Vector3.ZERO
 	last_wish = wish
 	if candle_lit:
 		Lighting.spread_heat(global_position, t.candle_touch, dt, self)
@@ -647,7 +739,13 @@ func _physics_process(dt: float) -> void:
 	var water := _water()
 	var fly := _magnet_line() if small and inventory.has("magnet") else Vector3.ZERO
 	magnet_flying = fly != Vector3.ZERO
-	if homing != null:
+	if not on_floor and guarding() and velocity.y < 0.0 and homing == null:
+		_surf_pogo()
+	if on_floor and guarding() and not _was_on_floor and flat_speed() > t.surf_min:
+		surfing = true # landed holding the shield: ride it
+	if flash_t > 0.0:
+		flash_t -= dt # the flash step's dash carries you
+	elif homing != null:
 		_homing_step(dt)
 	elif pound_t >= 0.0:
 		_pound_step(dt, on_floor, wish)
@@ -665,6 +763,8 @@ func _physics_process(dt: float) -> void:
 		_swim_step(dt, wish, water)
 	elif roll_t > 0.0:
 		_roll_step(dt, on_floor, jump_pressed or buffer > 0.0)
+	elif surfing and on_floor:
+		_surf_step(dt, wish)
 	elif on_floor:
 		_ground_step(dt, wish)
 	else:
@@ -723,6 +823,10 @@ func _ground_step(dt: float, wish: Vector3) -> void:
 	var sp := v.length()
 	var w := wish - n * wish.dot(n)
 	var top := (t.strafe_speed if target_held else t.top_speed) * _size_mult()
+	if guarding():
+		top = t.guard_speed * _size_mult()
+	elif poleaxe.frozen:
+		top = minf(top, t.charge_speed * _size_mult())
 	if w.length() > 0.05:
 		var wd := w.normalized()
 		if sp > 1.0 and v.normalized().dot(wd) < -0.3 and not target_held:
@@ -926,6 +1030,16 @@ func _update_visual(dt: float) -> void:
 	if fwd.length() < 0.01:
 		return
 	visual.global_basis = Basis.looking_at(fwd.normalized(), up).scaled(Vector3.ONE * (t.small_scale if small else 1.0))
+	_shield.visible = inventory.has("poleaxe")
+	if surfing and is_on_floor():
+		_shield.position = Vector3(0, -0.5, 0) # underfoot
+		_shield.rotation = Vector3(-PI / 2.0, 0, 0)
+	elif guarding():
+		_shield.position = Vector3(-0.1, 0.05, -0.55) # up in front
+		_shield.rotation = Vector3(0, 0, 0.3 if braced() else 0.0)
+	else:
+		_shield.position = Vector3(-0.5, 0.0, 0.05) # at your side
+		_shield.rotation = Vector3(0, PI / 2.0, 0.4 if guard_break_t > 0.0 else 0.0)
 	if roll_t > 0.0 and roll_kind != "sidehop":
 		var spin := (1.0 - roll_t / t.roll_time) * TAU * (1.0 if roll_kind == "roll" else -1.0)
 		visual.rotate_object_local(Vector3.RIGHT, -spin)
@@ -1119,12 +1233,104 @@ func _hang_step(wish: Vector3, jump_pressed: bool) -> void:
 		velocity = hang_n * 2.0
 		hang = Vector3.ZERO
 
+## Shield surf: on your shield there's almost no friction, slopes speed you up as they would a roll, and the
+## stick only steers (surf_turn). Jump hops with your speed, walls bounce you, and whatever you run into takes
+## a bump. Let go of guard, or slow to surf_min on the flat, and you step off.
+func _surf_step(dt: float, wish: Vector3) -> void:
+	coyote = t.coyote_time
+	var n := get_floor_normal()
+	if n == Vector3.ZERO:
+		n = Vector3.UP
+	var v := velocity - n * velocity.dot(n)
+	var g := Vector3.DOWN * t.gravity
+	var down := (g - n * g.dot(n)) * t.slope_factor
+	v += down * dt
+	v = v.move_toward(Vector3.ZERO, t.surf_friction * dt)
+	var w := wish - n * wish.dot(n)
+	if w.length() > 0.2 and v.length() > 0.5:
+		var ang := v.signed_angle_to(w, n)
+		v = v.rotated(n, clampf(ang, -t.surf_turn * dt, t.surf_turn * dt))
+	if is_on_wall():
+		var wn := get_wall_normal()
+		wn.y = 0.0
+		if wn.length() > 0.5 and v.dot(wn.normalized()) < 0.0:
+			wn = wn.normalized()
+			v = (v - wn * 2.0 * v.dot(wn)) * 0.7 # bounce off
+			Hitfx.shake(get_tree(), 0.08)
+	v = v.limit_length(t.boost_speed)
+	up_direction = n
+	velocity = v
+	facing = v.normalized() if v.length() > 0.5 else facing
+	if down.length() < 1.0 and v.length() < t.surf_min:
+		surfing = false
+	# bump whatever you surf into
+	var now := Time.get_ticks_msec()
+	for m in get_tree().get_nodes_in_group("monsters"):
+		var mn := m as Monster
+		var d := mn.global_position - global_position
+		if d.length() < radius() + 1.0 and v.length() > 4.0 and now - int(_surf_hit.get(mn.get_instance_id(), -100000)) > 500:
+			_surf_hit[mn.get_instance_id()] = now
+			mn.strike(1 + (1 if v.length() > t.fast_blade_speed else 0), global_position, {"head": "shield", "knock": v.length() * 0.8, "above": true})
+			Hitfx.hit(get_tree(), mn.global_position, t, 1.0)
+	if buffer > 0.0:
+		_ground_jump(n)
+
+## Coming down on something with your shield under you: it's a pogo, even on a spiked monster's head.
+func _surf_pogo() -> void:
+	for n in get_tree().get_nodes_in_group("monsters"):
+		var node := n as Monster
+		if node == _pogo_last:
+			continue
+		var d := node.global_position - global_position
+		if d.y < -0.2 and d.y > -(radius() + 1.3) and Vector2(d.x, d.z).length() < radius() + 0.8:
+			node.strike(2, global_position, {"head": "shield", "knock": 3.0, "above": true, "air": true})
+			Hitfx.hit(get_tree(), node.global_position, t, 1.3)
+			velocity = Vector3(velocity.x, t.pogo_speed, velocity.z)
+			global_position.y = maxf(global_position.y, node.global_position.y + radius() + 0.7)
+			_pogo_last = node
+			air_lock = 0.1
+			jumping = false
+			jump_chain = 0
+			return
+
+## The monster you're locked on to, if it's a monster.
+func _focus_target() -> Monster:
+	if target_held and target != null and is_instance_valid(target) and target is Monster:
+		return target as Monster
+	return null
+
+## Locked on at the poleaxe's measure (focus_near to focus_far: just outside its reach), focus builds. Anywhere else it drains.
+func _update_focus(dt: float) -> void:
+	var m := _focus_target()
+	if m == null:
+		focus_meter = 0.0
+		return
+	var d := m.global_position - global_position
+	var dist := Vector2(d.x, d.z).length()
+	if dist >= t.focus_near and dist <= t.focus_far:
+		focus_meter = minf(focus_meter + t.focus_rate * dt, 1.0)
+	else:
+		focus_meter = maxf(focus_meter - t.focus_rate * dt, 0.0)
+
+## Full focus: the attack steps you in to exactly tip range and thrusts (the flash move: 4 damage and a stagger).
+func _flash_step() -> void:
+	var m := _focus_target()
+	var d := m.global_position - global_position
+	d.y = 0.0
+	var dist := d.length()
+	flash_t = 0.1
+	velocity = d.normalized() * maxf(dist - 2.6, 0.0) / flash_t
+	facing = d.normalized()
+	focus_meter = 0.0
+	poleaxe.flash()
+
 func _can_pound() -> bool:
 	return pound_t < 0.0 and not hands_full() and homing == null and rail == null and hang == Vector3.ZERO \
 		and climbing == null and grapple_t <= 0.0 and not magnet_flying
 
 ## Ground pound (attack in the air without lock-on, hands empty): a short pause, then straight down at pound_speed.
-## - Onto a monster or spikes: it hits (2) and bounces you up, ready to pound or home in on the next.
+## - Onto a monster or spikes: it hits (2) and bounces you up, ready to pound or home in on the next. A monster in
+##   the air (launched) is spiked down. A monster with spikes on its head hurts you instead: surf onto those.
 ## - Onto flat ground: a shockwave hurts what's right around you, and jumping within pound_jump_window is a
 ##   high jump. Holding a direction as you land rolls you out instead (jump out of the roll: long jump).
 ## - Onto a slope: the fall turns into speed downhill.
@@ -1142,10 +1348,16 @@ func _pound_step(dt: float, on_floor: bool, wish: Vector3) -> void:
 			continue
 		var d := node.global_position - global_position
 		if d.y < 0.2 and d.y > -(radius() + 1.2) and Vector2(d.x, d.z).length() < radius() + 0.7:
-			if node.is_in_group("hurtable"):
+			pound_t = -1.0
+			if node is Monster and (node as Monster).spiked:
+				velocity = Vector3.UP * t.pogo_speed * 0.6
+				hurt(1, node.global_position + Vector3.UP * 0.5, node)
+				return
+			if node is Monster:
+				(node as Monster).strike(2, global_position, {"head": "pound", "spike": true, "above": true, "knock": 4.0})
+			elif node.is_in_group("hurtable"):
 				node.hurt(2, global_position)
 			Hitfx.hit(get_tree(), node.global_position, t, 1.4)
-			pound_t = -1.0
 			velocity = Vector3.UP * t.pogo_speed * 1.2
 			global_position.y = maxf(global_position.y, node.global_position.y + radius() + 0.6)
 			_pogo_last = node
@@ -1179,7 +1391,7 @@ func _pound_step(dt: float, on_floor: bool, wish: Vector3) -> void:
 
 ## Air attack while holding lock-on: home in on the nearest thing to hit ahead of you. It doesn't stick to
 ## your lock-on target, so after a bounce it chains on to the next one. Returns false if there's nothing in
-## reach, and the spear does an air slash instead. (Without lock-on the air attack is a ground pound.)
+## reach, and the poleaxe does an air slash instead. Monsters with spikes on their heads are skipped. (Without lock-on the air attack is a ground pound.)
 func _start_homing() -> bool:
 	var best: Node3D = null
 	var best_d := t.homing_range
@@ -1187,8 +1399,12 @@ func _start_homing() -> bool:
 	var cands: Array = get_tree().get_nodes_in_group("hurtable") + get_tree().get_nodes_in_group("pogo")
 	for n in cands:
 		var node := n as Node3D
-		if node == self or node is Player or node is CrackedWall or node == _pogo_last:
+		if node == self or node is Player or node is CrackedWall:
 			continue
+		if node is Monster and (node as Monster).spiked:
+			continue # spikes on its head: homing onto it would hurt (surf onto it instead)
+		if node == _pogo_last and not (node is Monster and (node as Monster).air and (node as Monster).juggle < Monster.JUGGLE_MAX):
+			continue # not the same one again until you land, unless you're juggling it
 		var d := node.global_position - global_position
 		var ahead := Vector2(d.x, d.z).length() < 1.5 or Vector3(d.x, 0, d.z).normalized().dot(f) >= 0.3 # right overhead counts
 		if d.length() > best_d or not ahead:
@@ -1205,7 +1421,7 @@ func _start_homing() -> bool:
 	if target_held and best.is_in_group("targets"):
 		target = best # the lock-on follows the chain, so the camera looks ahead, not back at the last one
 	homing_t = best_d / t.homing_speed + 0.25
-	spear.start("air")
+	poleaxe.start("air")
 	return true
 
 ## Flying at the homing target. Reaching it hits it (enemies take damage, spikes don't hurt you) and
@@ -1217,9 +1433,12 @@ func _homing_step(dt: float) -> void:
 		return
 	var d := homing.global_position - global_position
 	if d.length() < radius() + 0.9:
-		if homing.is_in_group("hurtable") and not spear._hit.has(homing): # the air slash may have hit it already
-			spear._hit.append(homing)
-			homing.hurt(2, global_position)
+		if homing.is_in_group("hurtable") and not poleaxe._hit.has(homing): # the air slash may have hit it already
+			poleaxe._hit.append(homing)
+			if homing is Monster:
+				(homing as Monster).strike(2, global_position, {"head": "blade", "air": true, "knock": 5.0})
+			else:
+				homing.hurt(2, global_position)
 		Hitfx.hit(get_tree(), homing.global_position, t, 1.2)
 		# you strike it and come off its top, even if you flew in from below
 		var over := homing.global_position + Vector3.UP * (radius() + 0.8)

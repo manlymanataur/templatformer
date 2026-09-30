@@ -7,7 +7,7 @@ extends CharacterBody3D
 ## In the dark it floats, holding its height, and can drift out over a chasm. In light it goes limp:
 ## it drops to the ground and crawls slowly. Once light knocks it out of the air it falls all the way down,
 ## even if it falls back into shadow.
-## It carries a greatsword and copies each of your spear moves (mirrored) while it's in the dark.
+## It carries a greatsword and copies each of your poleaxe moves (mirrored) while it's in the dark.
 ## Lit, it's too limp to swing. If it drops into a chasm it fades, and you can call it again.
 
 var player: Player
@@ -47,7 +47,7 @@ static func summon(p: Player) -> Umbra:
 		at = (hit["position"] as Vector3) - fwd * 0.45
 	u.global_position = at
 	u.home_y = u.global_position.y
-	p.spear.move_started.connect(u.copy_attack)
+	p.poleaxe.move_started.connect(u.copy_attack)
 	return u
 
 func _ready() -> void:
@@ -123,7 +123,7 @@ func facing() -> Vector3:
 	var f := mirrored(player._flat_facing())
 	return f.normalized() if f.length() > 0.01 else Vector3.FORWARD
 
-## Your spear started a move: swing the greatsword too, unless light has it limp.
+## Your poleaxe started a move: swing the greatsword too, unless light has it limp.
 func copy_attack(move: String) -> void:
 	if lit:
 		return

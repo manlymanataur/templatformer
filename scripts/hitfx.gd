@@ -7,7 +7,7 @@ static var slow_left := 0.0 ## seconds of perfect-dodge slow-motion left
 static var world := 1.0 ## how fast monsters run right now (the player sets it each frame)
 static var _stopping := false
 
-## A solid hit at `at`: freeze briefly, shake, spark. strength 1 is a normal spear hit.
+## A solid hit at `at`: freeze briefly, shake, spark. strength 1 is a normal poleaxe hit.
 static func hit(tree: SceneTree, at: Vector3, t: Tuning, strength := 1.0) -> void:
 	sparks(tree, at, strength)
 	shake(tree, t.shake_hit * strength)

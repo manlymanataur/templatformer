@@ -23,6 +23,11 @@ class Hearts extends Control:
 				_heart(o, Color(0.95, 0.2, 0.3))
 			elif fill == 1:
 				_heart(o, Color(0.95, 0.2, 0.3), true)
+		# focus: a thin bar under the hearts while you hold the poleaxe's measure (full: the next attack is a flash step)
+		if player.focus_meter > 0.0:
+			var w := 34.0 * player.max_hp / 2 - 6.0
+			draw_rect(Rect2(0, 34, w, 5), Color(0, 0, 0, 0.35))
+			draw_rect(Rect2(0, 34, w * player.focus_meter, 5), Color(1.0, 0.95, 0.6) if player.focus_meter >= 1.0 else Color(0.6, 0.8, 1.0, 0.8))
 	func _heart(o: Vector2, c: Color, half := false) -> void:
 		var pts := PackedVector2Array()
 		for k in 33:
@@ -101,12 +106,12 @@ func _refresh() -> void:
 	sel = clampi(sel, 0, maxi(items.size() - 1, 0))
 	var s := "INVENTORY\n\n"
 	if items.is_empty():
-		s += "Nothing yet. Find the spear by the start.\n"
+		s += "Nothing yet. Find the poleaxe by the start.\n"
 	for k in items.size():
 		var id := items[k]
 		var tag := ""
 		if not Inventory.ITEMS[id]["slot"]:
-			tag = "  (equipped: F / X to attack)"
+			tag = "  (equipped: F / X attack, C / RT guard)"
 		elif inv.slots.has(id):
 			tag = "  [slot %d]" % (inv.slots.find(id) + 1)
 		s += ("> " if k == sel else "   ") + "%s ×%d%s\n" % [Inventory.ITEMS[id]["name"], inv.count(id), tag]

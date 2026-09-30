@@ -1,12 +1,12 @@
 class_name Inventory
 extends RefCounted
-## Ocarina-style inventory. The spear is equipment (always on the attack button).
+## Ocarina-style inventory. The poleaxe and shield are equipment (the attack and guard buttons).
 ## Usable items go on three quick slots (keys 1-3, like the C buttons) from the pause screen.
 
 signal changed
 
 const ITEMS := {
-	"spear": {"name": "Spear", "color": Color(0.85, 0.75, 0.45), "slot": false, "max": 1},
+	"poleaxe": {"name": "Poleaxe & Shield", "color": Color(0.85, 0.75, 0.45), "slot": false, "max": 1},
 	"potion": {"name": "Red Potion", "color": Color(0.9, 0.2, 0.2), "slot": true, "max": 3},
 	# toggles: using one switches it on or off, nothing is used up
 	"candle": {"name": "Candle Hat", "color": Color(1.0, 0.75, 0.35), "slot": true, "max": 1, "toggle": true},

@@ -3,7 +3,7 @@ extends CharacterBody3D
 ## A propagule from Propagule: a 2 m cube, one grid cell, big enough to jump on. Carry it, plant it, and it
 ## grows a trunk and roots.
 ## - Pick it up with the context button when you're next to it, or fetch it from afar with the lash. Your
-##   hands are full while you carry it: no spear, no lash.
+##   hands are full while you carry it: no poleaxe, no lash.
 ## - Context button while carrying: set down in front of you on soil, mud or roots, it plants; anywhere else
 ##   you throw it (moving) or set it down (standing still), like a bomb.
 ## - A seed that falls spear_drop metres or more onto mud spears in and plants itself.
