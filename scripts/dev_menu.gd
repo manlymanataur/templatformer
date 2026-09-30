@@ -37,6 +37,10 @@ const WARPS := [
 	["Moves: pogo spikes", "moves_pogo"],
 	["Moves: ledge grab", "moves_ledge"],
 	["Challenge room doors", "challenge_doors"],
+	["Combat: downhill", "combat_hill_top"],
+	["Combat: spiked row", "combat_spiked"],
+	["Combat: wolves", "combat_wolves"],
+	["Combat: wall court", "combat_court"],
 	["Test colossus", "colossus_arena"],
 ]
 const SHOWN := 12 ## rows the menu shows at once

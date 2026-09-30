@@ -19,18 +19,25 @@ Locally: open this folder in Godot 4.5 and press F5.
 | Lock on / strafe (hold) | Shift or Z | left trigger |
 | Dodge while locked on | quick tap of the stick: sideways side hop, back backflip, forward roll | same |
 | Camera | mouse (click to capture, Esc to release), or I J K L | right stick |
-| Spear attack (once you've found it) | F or left click | X |
-| Combo / long slash | tap attack up to 3 times / attack while running | |
-| Homing attack / air slash | attack in the air while holding lock-on: you home in on the nearest monster or spike ball ahead, hit it and bounce up, ready to home in on the next (it doesn't stick to your lock-on target, so chains keep going). Nothing in reach: an air slash | |
+| Poleaxe attack (once you've found the poleaxe & shield) | F or left click | X |
+| Combo / running blade | tap attack: thrust, thrust, then a blade sweep that launches. Running faster than 9 m/s: a running blade that keeps your speed (+1 above 13 m/s, which only downhills reach) | |
+| Sweet spots | the point's tip (2.25 m or more out) does double; the sweep's edge +1; the hammer's centre +2 | |
+| Hold attack | the swing waits at the end of its startup. Let go before 0.25 s and it goes on (a delay); after 0.25 s it's the hammer (staggers, smashes shields and armour, spikes launched monsters down); after 0.8 s it's the spin, all around you, on the ground or in the air (the charge carries through a jump, and the spin slows your fall) | |
+| Hit-cancel | once a swing hits, attack again to go straight into the next | |
+| Guard (shield) | C | right trigger |
+| | Blocks hits from in front (you slide back; heavy hits push harder, and a wall right behind you breaks your guard). Raised just as a hit lands (first 0.2 s) it's a perfect guard: the attacker reels open (double damage), arrows fly back, and your next sweet-spot hit is +2 and staggers. Attack while guarding: shield bash | |
+| Brace | guard and stand still for 0.35 s: something charging onto your point faster than 12 m/s is impaled (4 damage), and the poleaxe sticks for 0.8 s | |
+| Shield surf | hold guard in the air and land holding it: you ride your shield. Slopes speed you up, the stick steers, jump hops, walls bounce you, and you bump whatever you hit. Coming down on a monster with the shield under you pogos you off it, even one with spikes on its head | |
+| Focus | locked on 3 to 5.5 m from a monster, the bar under your hearts fills in about 2 s; full, your next attack is a flash step to tip range for 4 | |
+| Homing attack / air slash | attack in the air while holding lock-on: you home in on the nearest monster or spike ball ahead, hit it and bounce up, ready to home in on the next (it doesn't stick to your lock-on target, so chains keep going). A launched monster can be homed on again, up to 3 juggle hits. Monsters with spikes on their heads are skipped. Nothing in reach: an air slash | |
 | Perfect dodge | get hit during a roll's i-frames: no damage, and the world slows to 30% for 1.5 s while you don't | |
 | Climb | push into vines (or a trunk) to climb as high as they go; jump kicks off | |
 | Ledge grab | fall against a wall whose top is within 1.2 m above you: you hang. Push on or jump to pull up, pull away to drop. Iron is too smooth to grab | |
-| Ground pound | attack in the air without lock-on (hands empty; no spear needed): a pause, then straight down at 30 m/s. Onto a monster or spikes it hits and bounces you up (pound again, or hold lock-on and attack to home in on the next). Onto flat ground, jump right away for a 5.4 m high jump, or hold a direction to roll out. Onto a slope, the fall turns into downhill speed | |
+| Ground pound | attack in the air without lock-on (hands empty; no poleaxe needed): a pause, then straight down at 30 m/s. Onto a monster or spikes it hits and bounces you up (a launched monster is spiked down, and its landing bursts on those around it; a monster with spikes on its head hurts you instead) (pound again, or hold lock-on and attack to home in on the next). Onto flat ground, jump right away for a 5.4 m high jump, or hold a direction to roll out. Onto a slope, the fall turns into downhill speed | |
 | Long jump | jump out of a roll: 20 m/s forward, about 12 m. You land with only 40% of the speed above your running top speed. Grab a ledge, pull up, ground pound onto it straight away, roll out and jump: that long jump is 15% stronger (23 m/s) | |
 | Boost pad | 30 m/s that holds for 1.5 s before it starts bleeding off | |
 | Combos | a wall kick counts as the first jump of the chain; rolls keep their speed and gain it downhill; slopes give the speed a triple jump needs | |
 | Grind rail | land or walk onto a rail. Downhill speeds you up, uphill slows you; jump hops off | |
-| Spin attack | hold attack until the tip glows, then let go | |
 | Use quick item 1 / 2 / 3 | 1 / 2 / 3 | Y / LB / RB |
 | Context action | E | B |
 | | Picks up a seed cube or the spider, pulls a bomb off a bomb plant, pulls a planted seed back up. Holding something: moving throws it, standing still sets it down; a seed set down on soil, mud or roots plants | |
@@ -96,13 +103,13 @@ The rooms:
 
 Up the ramp behind the start. The hall is dark, so light is a rule, not just a look:
 
-- The candle hat lights about 12 m around you and sets fire to what you touch. While you wear it, your spear attacks are on fire too. Fire spreads through grass, burns vines away, melts ice and lights braziers.
+- The candle hat lights about 12 m around you and sets fire to what you touch. While you wear it, your poleaxe attacks are on fire too. Fire spreads through grass, burns vines away, melts ice and lights braziers.
 - Umbra copies your movement, mirrored left to right (the mirror line is the camera's left-right when you call it). Walls stop it separately from you.
 - In the dark Umbra floats at its height, even over a chasm. In light it drops to the ground and crawls. Light that hits it over a chasm drops it in, and you call it again.
 - Your body casts a shadow for Umbra, unless you're wearing the lit candle.
 - Moon plates only react to Umbra.
 - Umbra appears 1.5 m beside you, on the mirror line.
-- In the dark Umbra copies each of your spear moves, mirrored, with a greatsword (2 damage). Lit, it's too limp to swing.
+- In the dark Umbra copies each of your poleaxe moves, mirrored, with a greatsword (2 damage). Lit, it's too limp to swing.
 
 ## Lodestone yard
 

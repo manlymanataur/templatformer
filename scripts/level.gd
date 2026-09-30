@@ -242,8 +242,8 @@ func _build() -> void:
 	label(Vector3(-2, 3, 12), "hold Shift / Z to lock on")
 
 	# Item pickups near the start
-	Pickup.spawn(self, "spear", 1, Vector3(4, 0.8, 4))
-	label(Vector3(4, 2.4, 4), "spear")
+	Pickup.spawn(self, "poleaxe", 1, Vector3(4, 0.8, 4))
+	label(Vector3(4, 2.4, 4), "poleaxe & shield")
 	BombFlower.make(self, Vector3(8, 0, 4), t)
 	label(Vector3(8, 2.4, 4), "bomb plant (E)")
 	Pickup.spawn(self, "potion", 1, Vector3(12, 0.8, 4))
@@ -253,8 +253,9 @@ func _build() -> void:
 	# Monster arena
 	box(Vector3(34, 0.1, 40), Vector3(22, 0.2, 22), Basis(), Color(0.75, 0.7, 0.55))
 	label(Vector3(34, 3, 28), "monsters")
-	for p in [Vector3(30, 1, 40), Vector3(38, 1, 36), Vector3(36, 1, 45)]:
-		Monster.spawn(self, p)
+	Monster.spawn(self, Vector3(30, 1, 40))
+	Monster.spawn(self, Vector3(38, 1, 36), "shield")
+	Monster.spawn(self, Vector3(36, 1, 45), "blob", true)
 
 	ShadowHall.build(self)
 	LodestoneYard.build(self)
@@ -263,5 +264,6 @@ func _build() -> void:
 	MovesYard.build(self)
 	Challenge.build(self)
 	Colossus.build(self)
+	CombatYard.build(self)
 	add_child(Power.new())
 	marks["targets"] = Vector3(-2, 0.6, 5)

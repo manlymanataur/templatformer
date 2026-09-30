@@ -28,7 +28,29 @@ extends Resource
 @export var roll_time := 0.4
 @export var roll_invuln := 0.3 ## dodge window at the start of a roll
 @export var strafe_speed := 7.0 ## top speed while holding target
-@export var spin_charge_time := 0.6
+@export var hammer_hold := 0.25 ## hold attack this long and let go: the hammer
+@export var spin_charge_time := 0.8 ## hold attack even longer and let go: the spin (ground or air)
+@export var charge_speed := 5.0 ## top speed while a swing is held back
+@export var run_attack_speed := 9.0 ## attack running faster than this: the running blade
+@export var fast_blade_speed := 13.0 ## the running blade (and a surf bump) does +1 above this; only downhills get you there
+@export var perfect_guard := 0.2 ## a hit this soon after the shield goes up is a perfect guard
+@export var parry_time := 2.0 ## after a perfect guard, your next sweet-spot hit within this is +2 and staggers
+@export var guard_speed := 3.5 ## walking with the shield up
+@export var guard_push := 5.0 ## a blocked hit pushes you back this fast
+@export var guard_push_heavy := 11.0 ## a blocked heavy hit (a rusher, a brute) pushes you back this fast
+@export var guard_wall := 1.2 ## a heavy hit with a wall this close behind you breaks your guard
+@export var guard_break := 0.9 ## how long a broken guard leaves you reeling
+@export var brace_time := 0.35 ## guard standing still this long to brace
+@export var impale_speed := 12.0 ## braced, something charging onto your point faster than this is impaled
+@export var impale_damage := 4.0
+@export var impale_stun := 1.6
+@export var stuck_time := 0.8 ## after an impale the poleaxe is stuck this long
+@export var surf_friction := 0.8 ## shield surf: slow-down on the flat (m/s per s)
+@export var surf_turn := 1.8 ## shield surf: steering (radians per second)
+@export var surf_min := 1.5 ## shield surf ends below this speed on the flat
+@export var focus_near := 3.0 ## locked on this far from a monster (or further) builds focus
+@export var focus_far := 5.5 ## ...up to this far
+@export var focus_rate := 0.45 ## focus per second (full at 1)
 @export var bomb_throw_speed := 7.0
 @export var bomb_throw_up := 5.0
 @export var dodge_tap_time := 0.2 ## a stick tap shorter than this rolls (or dodges, locked on)
@@ -83,5 +105,5 @@ extends Resource
 const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", "accel", "friction", "brake", "turn_rate", "turn_rate_fast",
 	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
-	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "spin_charge_time", "bomb_throw_speed",
+	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "hammer_hold", "spin_charge_time", "charge_speed", "run_attack_speed", "fast_blade_speed", "perfect_guard", "parry_time", "guard_speed", "guard_push", "guard_push_heavy", "guard_wall", "guard_break", "brace_time", "impale_speed", "impale_damage", "impale_stun", "stuck_time", "surf_friction", "surf_turn", "surf_min", "focus_near", "focus_far", "focus_rate", "bomb_throw_speed",
 	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_lag", "cam_recenter_delay"]

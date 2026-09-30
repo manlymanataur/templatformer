@@ -30,7 +30,7 @@ func _ready() -> void:
 		bm.height = 0.5
 		_mesh.mesh = bm
 		m.albedo_color = Color(1, 0.3, 0.4)
-	elif id == "spear":
+	elif id == "poleaxe":
 		var bm := BoxMesh.new()
 		bm.size = Vector3(0.08, 0.08, 1.6)
 		_mesh.mesh = bm

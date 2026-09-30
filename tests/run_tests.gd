@@ -41,6 +41,8 @@ func _run() -> void:
 	var t: Tuning = level.t
 	var m: Dictionary = level.marks
 	# the arena's monsters would wander into other tests; each combat test spawns its own
+	for sp in get_nodes_in_group("spawners"):
+		sp.queue_free()
 	for mon in get_nodes_in_group("monsters"):
 		mon.queue_free()
 	for pk in get_nodes_in_group("pickups"):
@@ -183,8 +185,16 @@ func _fresh_player(pos: Vector3) -> void:
 	if p.carrying != null:
 		p.carrying.queue_free()
 		p.carrying = null
-	p.spear.busy = 0.0
-	p.spear.combo_step = 0
+	p.poleaxe.busy = 0.0
+	p.poleaxe.combo_step = 0
+	p.poleaxe.frozen = false
+	p.poleaxe.stuck_t = 0.0
+	p.ai_guard = false
+	p.guard_t = -1.0
+	p.guard_break_t = 0.0
+	p.parry_t = 0.0
+	p.surfing = false
+	p.focus_meter = 0.0
 	p.attack_held_t = 0.0
 	p._tap_t = -1.0
 	p._roll_wish = Vector3.ZERO
@@ -203,29 +213,29 @@ func _monster_ahead(dist: float) -> Monster:
 func _combat_tests() -> void:
 	var arena := Vector3(-80, 0.6, -90) # empty floor far from everything else
 
-	# 12. Spear: each thrust hits once (not once per frame), 3 thrusts kill a blob
+	# 12. Poleaxe: each thrust hits once (not once per frame), 3 thrusts kill a blob
 	await _fresh_player(arena)
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	var mon := _monster_ahead(1.6)
 	var hits := []
 	for k in 3:
 		mon.global_position = p.global_position + Vector3(0, 0.1, -1.6)
 		mon.velocity = Vector3.ZERO
-		mon.stun = 5.0 # hold still so only the spear matters
+		mon.stun = 5.0 # hold still so only the poleaxe matters
 		p.ai_attack = true
 		await frames(24)
 		hits.append(mon.hp if is_instance_valid(mon) else 0)
-	check("spear: 3 thrusts, 1 damage each", hits == [2, 1, 0], "hp after each thrust %s" % [hits])
+	check("poleaxe: 3 thrusts, 1 damage each", hits == [2, 1, 0], "hp after each thrust %s" % [hits])
 	await frames(2)
 	check("dead blob is removed", not is_instance_valid(mon), "")
 
-	# 13. No spear, no attack
+	# 13. No poleaxe, no attack
 	await _fresh_player(arena)
 	mon = _monster_ahead(1.6)
 	mon.stun = 5.0
 	p.ai_attack = true
 	await frames(24)
-	check("can't attack before finding the spear", mon.hp == 3, "blob hp %d" % mon.hp)
+	check("can't attack before finding the poleaxe", mon.hp == 3, "blob hp %d" % mon.hp)
 	mon.queue_free()
 
 	# 14. Contact damage: half a heart per touch, then a second of invincibility
@@ -263,18 +273,18 @@ func _combat_tests() -> void:
 
 	# 16b. Walking into a pickup adds it
 	await _fresh_player(arena)
-	Pickup.spawn(level, "spear", 1, p.global_position + Vector3(0, 0.3, -3))
+	Pickup.spawn(level, "poleaxe", 1, p.global_position + Vector3(0, 0.3, -3))
 	p.ai_move = Vector2(0, -1)
 	await frames(30)
 	p.ai_move = Vector2.ZERO
-	check("walking into the spear picks it up", p.inventory.has("spear"), "")
+	check("walking into the poleaxe picks it up", p.inventory.has("poleaxe"), "")
 
 	# 17. Inventory: pickups go on free quick slots; assign swaps; potion only works when hurt
 	await _fresh_player(arena)
 	var inv := p.inventory
 	inv.add("candle")
 	inv.add("potion")
-	inv.add("spear")
+	inv.add("poleaxe")
 	check("items fill quick slots in order", inv.slots == (["candle", "potion", ""] as Array[String]), "%s" % [inv.slots])
 	inv.assign(0, "potion")
 	check("assigning swaps slots", inv.slots == (["potion", "candle", ""] as Array[String]), "%s" % [inv.slots])
@@ -328,6 +338,7 @@ func _combat_tests() -> void:
 	await _challenge_tests(arena)
 	await _colossus_tests()
 	await _feel_fix_tests()
+	await _poleaxe_tests()
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -499,7 +510,7 @@ func _move_tests(arena: Vector3) -> void:
 
 	# 28. Quick combo: jab, jab, sweep = 1 + 1 + 2 damage
 	await _fresh_player(arena)
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	mon = _monster_ahead(1.6)
 	mon.hp = 10
 	var seq := []
@@ -508,7 +519,7 @@ func _move_tests(arena: Vector3) -> void:
 		mon.velocity = Vector3.ZERO
 		mon.stun = 5.0
 		p.ai_attack = true
-		await frames(int(Spear.MOVES[Spear.COMBO[k]]["dur"] * 60.0) + 4)
+		await frames(int(Poleaxe.MOVES[Poleaxe.COMBO[k]]["dur"] * 60.0) + 4)
 		seq.append(mon.hp)
 	check("quick combo: jab, jab, sweep", seq == [9, 8, 6], "hp after each %s" % [seq])
 
@@ -518,30 +529,31 @@ func _move_tests(arena: Vector3) -> void:
 	var before: int = mon.hp
 	p.ai_attack = true
 	await frames(20)
-	check("combo resets after a pause", before - mon.hp == 1 and p.spear.move == "jab", "took %d, move %s" % [before - mon.hp, p.spear.move])
+	check("combo resets after a pause", before - mon.hp == 1 and p.poleaxe.move == "thrust", "took %d, move %s" % [before - mon.hp, p.poleaxe.move])
 	mon.queue_free()
 
 	# 30. Charged spin hits in front and behind
 	await _fresh_player(arena)
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	var front := _monster_ahead(2.0)
 	var back := _monster_ahead(-2.0)
 	for mm in [front, back]:
 		mm.stun = 20.0
 		mm.hp = 10
+	p.ai_attack = true
 	p.ai_attack_held = true
-	await frames(int(t.spin_charge_time * 60.0) + 25)
-	for mm in [front, back]:
-		mm.hp = 10 # ignore the opening jab
+	await frames(int(t.spin_charge_time * 60.0) + 5)
+	var held_back: bool = p.poleaxe.frozen and front.hp == 10 # the thrust waits while you hold
 	p.ai_attack_held = false
-	await frames(35)
-	check("charged spin hits all around", front.hp == 8 and back.hp == 8, "front %d, back %d" % [front.hp, back.hp])
+	await frames(40)
+	check("hold attack %.1f s and let go: a spin hits all around" % t.spin_charge_time, held_back and front.hp == 8 and back.hp == 8,
+		"held back %s, front %d, back %d" % [held_back, front.hp, back.hp])
 	front.queue_free()
 	back.queue_free()
 
 	# 31. Long slash: attacking at full speed lunges and hits from further away
 	await _fresh_player(Vector3(90, 0.6, -20))
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	p.velocity = Vector3(0, 0, -t.top_speed)
 	p.ai_move = Vector2(0, -1)
 	await frames(5)
@@ -550,22 +562,22 @@ func _move_tests(arena: Vector3) -> void:
 	p.ai_move = Vector2.ZERO
 	p.ai_attack = true
 	await frames(30)
-	check("running long slash", p.spear.move == "lunge" and mon.hp == 1, "move %s, blob hp %d" % [p.spear.move, mon.hp])
+	check("running long slash", p.poleaxe.move == "run" and mon.hp == 1, "move %s, blob hp %d" % [p.poleaxe.move, mon.hp])
 	mon.queue_free()
 
 	# 32. Air slash hits a blob below and in front
 	await _fresh_player(arena)
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	mon = _monster_ahead(1.5)
 	mon.stun = 20.0
 	p.ai_jump = true
 	await frames(12)
 	p.ai_jump = false
-	p.ai_target = true # locked on, the air attack is the spear's (without lock-on it's a ground pound)
+	p.ai_target = true # locked on, the air attack is the poleaxe's (without lock-on it's a ground pound)
 	p.ai_attack = true
 	await frames(40)
 	p.ai_target = false
-	check("air slash", p.spear.move == "air" and mon.hp == 1, "move %s, blob hp %d" % [p.spear.move, mon.hp])
+	check("air slash", p.poleaxe.move == "air" and mon.hp == 1, "move %s, blob hp %d" % [p.poleaxe.move, mon.hp])
 	mon.queue_free()
 
 	# 33. Bombs: thrown while moving lands a few metres away, set down while still lands at your feet
@@ -889,7 +901,7 @@ func _yard_tests(arena: Vector3) -> void:
 
 	# 47. Umbra copies your attacks with its greatsword in the dark, not in light
 	await _fresh_player(Vector3(6, 4.6, 88))
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	var u := _summon_facing_north()
 	mon = Monster.spawn(level, u.global_position + Vector3(0, 0.2, -1.4))
 	mon.drop_heart = false
@@ -902,7 +914,7 @@ func _yard_tests(arena: Vector3) -> void:
 	var dark_hit := hp0 - mon.hp
 	mon.queue_free()
 	await _fresh_player(arena)
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	u = _summon_facing_north()
 	mon = Monster.spawn(level, u.global_position + Vector3(0, 0.2, -1.4))
 	mon.drop_heart = false
@@ -921,7 +933,7 @@ func _yard_tests(arena: Vector3) -> void:
 	var burned := []
 	for lit in [false, true]:
 		await _fresh_player(arena)
-		p.inventory.add("spear")
+		p.inventory.add("poleaxe")
 		var grass := Burnable.make(level, "grass", arena + Vector3(0, -0.6, -1.8), Vector3(2, 0.3, 2))
 		if lit:
 			p.set_candle(true)
@@ -1587,7 +1599,7 @@ func _moves_yard_tests(arena: Vector3) -> void:
 	# 72. Homing attack: a locked-on air attack near spikes homes in and pogos you up unharmed; two climb the
 	# 8 m ledge. The lock-on stays on the first spike ball, and the second air attack still chains to the next.
 	await _fresh_player(m["moves_pogo"])
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	p.ai_move = Vector2(0, -0.4)
 	p.ai_jump = true
 	p.ai_target = true
@@ -1615,7 +1627,7 @@ func _moves_yard_tests(arena: Vector3) -> void:
 
 	# 73. Homing onto a blob hits it once for 2 and bounces you
 	await _fresh_player(arena)
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	var mon := _monster_ahead(4.0)
 	mon.stun = 20.0
 	mon.hp = 10
@@ -1633,9 +1645,9 @@ func _moves_yard_tests(arena: Vector3) -> void:
 	check("homing onto a blob 4 m away hits it once and bounces", mon.hp == 8 and rose, "blob hp %d, bounced %s" % [mon.hp, rose])
 	mon.queue_free()
 
-	# 74. Hit feel: a spear hit freezes the game briefly, then it runs again
+	# 74. Hit feel: a poleaxe hit freezes the game briefly, then it runs again
 	await _fresh_player(arena)
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	mon = _monster_ahead(1.6)
 	mon.stun = 20.0
 	mon.hp = 10
@@ -1646,7 +1658,7 @@ func _moves_yard_tests(arena: Vector3) -> void:
 		froze = froze or Engine.time_scale < 0.5
 	p.ai_attack = false
 	await create_timer(0.3, true, false, true).timeout
-	check("a spear hit stops the game for %.2f s, then it resumes" % t.hitstop, froze and Engine.time_scale == 1.0, "froze %s, time scale now %.2f" % [froze, Engine.time_scale])
+	check("a poleaxe hit stops the game for %.2f s, then it resumes" % t.hitstop, froze and Engine.time_scale == 1.0, "froze %s, time scale now %.2f" % [froze, Engine.time_scale])
 	mon.queue_free()
 
 	# 75. Perfect dodge: a hit that lands during a roll's i-frames slows the world instead
@@ -1750,7 +1762,7 @@ func _combo_tests(arena: Vector3) -> void:
 		bounced = bounced or (b1.hp < 10 and p.velocity.y > t.pogo_speed)
 		if bounced:
 			break
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	p.facing = Vector3.FORWARD
 	await frames(8)
 	p.ai_target = true # locked on, the air attack homes, and not only on the lock-on target
@@ -1989,15 +2001,15 @@ func _colossus_tests() -> void:
 	check("climb the colossus's fur from the ground onto its 13 m back", climbed and p.global_position.y > 12.9 and col.ridden(),
 		"climbed %s, ended at y %.1f, riding %s" % [climbed, p.global_position.y, col.ridden()])
 
-	# 90. The back plate shrugs off the spear; a ground pound cracks it off, and a second pound strikes the sigil
-	p.inventory.add("spear")
+	# 90. The back plate shrugs off the poleaxe; a ground pound cracks it off, and a second pound strikes the sigil
+	p.inventory.add("poleaxe")
 	var fwd := -col.global_basis.z
 	await _hover(col.to_global(Vector3(0, 14.2, 3.2)))
 	p.facing = fwd
 	await frames(20)
 	p.ai_attack = true
 	await frames(30)
-	var plate_after_spear := col.plate != null
+	var plate_after_axe := col.plate != null
 	await _hover(col.to_global(Vector3(0, 16.5, 1)))
 	p.ai_attack = true
 	await frames(60)
@@ -2005,11 +2017,11 @@ func _colossus_tests() -> void:
 	await _hover(col.to_global(Vector3(0, 16.0, 1)))
 	p.ai_attack = true
 	await frames(60)
-	check("a pound cracks the colossus's back plate (the spear can't), and a second pound strikes the sigil under it",
-		plate_after_spear and cracked and col.sigils[0].struck and not col.felled,
-		"plate survived the spear %s, cracked by the pound %s, sigil struck %s" % [plate_after_spear, cracked, col.sigils[0].struck])
+	check("a pound cracks the colossus's back plate (the poleaxe can't), and a second pound strikes the sigil under it",
+		plate_after_axe and cracked and col.sigils[0].struck and not col.felled,
+		"plate survived the poleaxe %s, cracked by the pound %s, sigil struck %s" % [plate_after_axe, cracked, col.sigils[0].struck])
 
-	# 91. A bomb blast breaks a front shin; with both gone it kneels, its forehead opens low enough to spear, and it falls
+	# 91. A bomb blast breaks a front shin; with both gone it kneels, its forehead opens low enough to strike, and it falls
 	await _fresh_player(m["colossus_arena"])
 	var broke := []
 	for k in 2:
@@ -2029,7 +2041,7 @@ func _colossus_tests() -> void:
 	face.y = 0.0
 	face = face.normalized()
 	await _fresh_player(Vector3(head.global_position.x, 0.6, head.global_position.z) + face * 1.7)
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	p.facing = -face
 	await frames(5)
 	p.ai_attack = true
@@ -2047,7 +2059,7 @@ func _feel_fix_tests() -> void:
 	# 92. A locked-on homing chain up the pogo spikes doesn't turn the camera round
 	var rig: CameraRig = get_nodes_in_group("camera_rig")[0]
 	await _fresh_player(m["moves_pogo"])
-	p.inventory.add("spear")
+	p.inventory.add("poleaxe")
 	rig.yaw = 0.0 # looking -z, up the spikes
 	p.ai_target = true
 	await frames(20)
@@ -2121,3 +2133,441 @@ func _feel_fix_tests() -> void:
 	await frames(120)
 	check("a boost pad holds %.0f m/s for %.1f s: you reach the quarter pipe still going %.0f" % [t.boost_pad_speed, t.boost_hold, t.boost_pad_speed],
 		at_pipe > t.boost_pad_speed - 1.0, "%.1f m/s at the pipe" % at_pipe)
+
+## A monster that stands still for the test: no AI, no drop.
+func _dummy(pos: Vector3, kind := "blob", spiked := false, hp := 10) -> Monster:
+	var mon := Monster.spawn(level, pos, kind, spiked)
+	mon.drop_heart = false
+	mon.home = pos
+	mon.max_hp = hp
+	mon.stun = 60.0
+	await physics_frame
+	mon.hp = hp
+	mon.state = "move"
+	return mon
+
+## Press attack and hold it for secs, then let go.
+func _hold_attack(secs: float) -> void:
+	p.ai_attack = true
+	p.ai_attack_held = true
+	await frames(int(secs * 60.0))
+	p.ai_attack_held = false
+
+## The poleaxe kit (combat sketchbook VII), the spin on a longer hold, and spiked monsters.
+func _poleaxe_tests() -> void:
+	var t: Tuning = level.t
+	var m: Dictionary = level.marks
+	var arena := Vector3(-80, 0.6, -90)
+
+	# 95. Tipper: a thrust landed with the last stretch of its reach does double
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	var mon := await _dummy(p.global_position + Vector3(0, 0.1, -2.7))
+	p.ai_attack = true
+	await frames(24)
+	check("a thrust's tip (%.2f m or more out) does double: 2" % Poleaxe.TIP_FROM, mon.hp == 8, "blob hp %d of 10" % mon.hp)
+	mon.queue_free()
+
+	# 96. A short hold delays the thrust; hold past hammer_hold and it's the hammer: +2 at its centre, and a stagger
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	mon = await _dummy(p.global_position + Vector3(0, 0.1, -2.0))
+	p.ai_attack = true
+	p.ai_attack_held = true
+	await frames(int(t.hammer_hold * 60.0) - 4)
+	var waited: bool = mon.hp == 10 and p.poleaxe.frozen
+	p.ai_attack_held = false
+	await frames(20)
+	var delayed_thrust: bool = mon.hp == 9 and p.poleaxe.move == "thrust"
+	await frames(20)
+	mon.hp = 10
+	mon.stun = 0.6 # still reeling when the hammer lands, so the stagger shows
+	mon.global_position = p.global_position + Vector3(0, 0.1, -2.0)
+	await _hold_attack(t.hammer_hold + 0.1)
+	await frames(20)
+	check("hold attack under %.2f s: the thrust waits, then lands (1)" % t.hammer_hold, waited and delayed_thrust, "waited %s, delayed thrust %s" % [waited, delayed_thrust])
+	check("hold past %.2f s: the hammer, 4 at its centre, and it staggers" % t.hammer_hold, p.poleaxe.move == "hammer" and mon.hp == 6 and mon.stun > 0.9,
+		"move %s, blob hp %d, stun %.1f" % [p.poleaxe.move, mon.hp, mon.stun])
+	mon.queue_free()
+
+	# 97. The spin works in the air: charge on the ground, jump, let go; the whirl slows your fall
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	p.ai_attack = true
+	p.ai_attack_held = true
+	await frames(int(t.spin_charge_time * 60.0) - 20)
+	p.ai_jump = true
+	await frames(22)
+	p.ai_jump = false
+	var aloft := not p.is_on_floor()
+	p.ai_attack_held = false
+	var slowest := 0.0
+	var air_spin := false
+	for i in 25:
+		await physics_frame
+		if p.poleaxe.move == "spin" and p.poleaxe.busy > 0.0 and not p.is_on_floor():
+			air_spin = true
+			slowest = minf(slowest, p.velocity.y)
+	check("hold %.1f s, jump and let go: a spin in the air, falling no faster than 3 m/s" % t.spin_charge_time, aloft and air_spin and slowest >= -3.05,
+		"in the air %s, spun %s, fell at %.1f m/s" % [aloft, air_spin, -slowest])
+	await frames(30)
+
+	# 98. The sweep launches; each air hit lifts less (8, 6, 4 m/s), then nothing does but a spike
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	mon = await _dummy(p.global_position + Vector3(0, 0.1, -1.8))
+	var combo := []
+	for k in 3:
+		mon.global_position = p.global_position + Vector3(0, 0.1, -1.8)
+		mon.velocity = Vector3.ZERO
+		p.ai_attack = true
+		await frames(2)
+		combo.append(p.poleaxe.move)
+		for i in 60: # hitstop stretches a swing, so wait for it to end
+			if p.poleaxe.busy <= 0.0:
+				break
+			await physics_frame
+	var launched := mon.air
+	var top_y := mon.global_position.y
+	for i in 30:
+		await physics_frame
+		top_y = maxf(top_y, mon.global_position.y)
+	var lifts := []
+	for k in 4:
+		mon.velocity.y = -1.0 # falling
+		mon.strike(0, p.global_position, {"head": "blade", "air": true})
+		lifts.append(snappedf(mon.velocity.y, 0.1))
+	check("the sweep launches a blob %.1f m up, and juggle hits lift it 8, 6, 4 m/s, then not at all" % (top_y - p.global_position.y), launched and top_y - p.global_position.y > 1.8 and lifts == [8.0, 6.0, 4.0, -1.0],
+		"moves %s, launched %s, lifts %s" % [combo, launched, lifts])
+	mon.queue_free()
+
+	# 99. A pound onto a launched blob spikes it down; its landing bursts on the blob beside it
+	await _fresh_player(arena + Vector3(8, 0, 0))
+	mon = await _dummy(arena + Vector3(0, 0.1, 0))
+	var other := await _dummy(arena + Vector3(2.0, 0.1, 0))
+	mon.stun = 0.0
+	mon.strike(0, mon.global_position + Vector3.BACK, {"launch": true})
+	await frames(15)
+	await _hover(mon.global_position + Vector3(0, 2.2, 0))
+	p.ai_attack = true
+	var spiked_down := 0.0
+	for i in 60:
+		await physics_frame
+		if is_instance_valid(mon):
+			spiked_down = minf(spiked_down, mon.velocity.y)
+	check("a pound spikes a launched blob down (%.0f m/s) and its landing bursts on the one beside it" % Monster.SPIKE_SPEED,
+		spiked_down < -20.0 and other.hp == 9 and mon.hp < 8, "fell at %.0f m/s, neighbour hp %d, blob hp %d" % [-spiked_down, other.hp, mon.hp])
+	mon.queue_free()
+	other.queue_free()
+
+	# 100. Guard: a perfect guard (the first 0.2 s) opens the attacker; later hits are blocked and push you back;
+	# a heavy hit with a wall right behind you breaks the guard
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	mon = await _dummy(p.global_position + Vector3(0, 0.1, -1.5))
+	p.ai_guard = true
+	await frames(4)
+	p.hurt(1, mon.global_position, mon)
+	var perfect: bool = p.hp == p.max_hp and mon.open_t > 0.0 and p.parry_t > 0.0
+	await frames(30)
+	p.hurt(1, mon.global_position, mon)
+	var push := p.flat_speed()
+	var blocked := p.hp == p.max_hp
+	await frames(20)
+	p.hurt(2, mon.global_position, mon, true)
+	var push_heavy := p.flat_speed()
+	check("perfect guard (first %.1f s): no damage, the attacker opens up" % t.perfect_guard, perfect, "hp %d, open %.1f, parry %.1f" % [p.hp, mon.open_t, p.parry_t])
+	check("a block costs nothing and pushes you back %.0f m/s (heavy: %.0f)" % [t.guard_push, t.guard_push_heavy], blocked and p.hp == p.max_hp and absf(push - t.guard_push) < 0.6 and absf(push_heavy - t.guard_push_heavy) < 0.6,
+		"hp %d, pushed %.1f then %.1f m/s" % [p.hp, push, push_heavy])
+	mon.queue_free()
+	await _fresh_player(m["combat_court"] + Vector3(0, 0, -7.2)) # just in front of the court wall
+	p.inventory.add("poleaxe")
+	p.facing = Vector3.BACK # facing away from the wall
+	p.ai_guard = true
+	await frames(30)
+	p.hurt(2, p.global_position + Vector3(0, 0, 1.5), null, true)
+	check("a heavy hit with the wall behind you breaks your guard for %.1f s (no damage)" % t.guard_break, p.guard_break_t > 0.0 and not p.guarding() and p.hp == p.max_hp,
+		"broken %.1f s, hp %d" % [p.guard_break_t, p.hp])
+	p.ai_guard = false
+
+	# 101. After a perfect guard the next sweet-spot hit is +2 and staggers
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	mon = await _dummy(p.global_position + Vector3(0, 0.1, -2.7))
+	p.ai_guard = true
+	await frames(3)
+	p.hurt(1, mon.global_position, null)
+	p.ai_guard = false
+	await frames(3)
+	mon.stun = 0.4
+	mon.open_t = 0.0
+	p.ai_attack = true
+	await frames(24)
+	check("after a perfect guard a tip thrust does 2 + 2 and staggers", mon.hp == 6 and mon.stun > 0.9, "blob hp %d, stun %.1f" % [mon.hp, mon.stun])
+	mon.queue_free()
+
+	# 102. Arrows: a perfect guard sends one back into the archer; a later block just stops it
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	var archer := await _dummy(p.global_position + Vector3(0, 0.3, -12), "archer", false, 2)
+	var arrow := Arrow.shoot(level, p.global_position + Vector3(0, 0.3, -5), Vector3(0, 0, Monster.ARROW_SPEED), archer)
+	await frames(10)
+	p.ai_guard = true
+	for i in 90:
+		await physics_frame
+	var sent_back := not is_instance_valid(archer) and p.hp == p.max_hp
+	arrow = Arrow.shoot(level, p.global_position + Vector3(0, 0.3, -5), Vector3(0, 0, Monster.ARROW_SPEED), null)
+	await frames(30)
+	check("a perfect guard sends an arrow back and it kills the archer; a block stops the next", sent_back and not is_instance_valid(arrow) and p.hp == p.max_hp,
+		"archer down %s, second arrow gone %s, hp %d" % [sent_back, not is_instance_valid(arrow), p.hp])
+	p.ai_guard = false
+
+	# 103. Brace: guard standing still, and a rusher charging onto your point is impaled (4) and the poleaxe sticks
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	var rusher := await _dummy(p.global_position + Vector3(0, 0.1, -9), "rusher")
+	rusher.stun = 0.0
+	p.ai_guard = true
+	var impaled := false
+	var stuck := false
+	for i in 150:
+		await physics_frame
+		if rusher.hp < 10:
+			impaled = true
+			stuck = p.poleaxe.stuck_t > 0.0
+			break
+	await frames(3)
+	check("braced (%.2f s still), a rusher charging at %.0f m/s is impaled for %d and stunned; the poleaxe sticks %.1f s" % [t.brace_time, Monster.RUSH_SPEED, int(t.impale_damage), t.stuck_time],
+		impaled and rusher.hp == 10 - int(t.impale_damage) and rusher.stun > 1.0 and stuck and p.hp == p.max_hp,
+		"impaled %s, rusher hp %d, stun %.1f, stuck %s, your hp %d" % [impaled, rusher.hp, rusher.stun, stuck, p.hp])
+	p.ai_guard = false
+	rusher.queue_free()
+
+	# 104. A rusher that misses charges on into the wall and is dazed
+	await _fresh_player(m["combat_court"])
+	rusher = await _dummy(m["combat_court"] + Vector3(0, 0.1, 6), "rusher")
+	rusher.stun = 0.0
+	var dodged_at := -1
+	var dazed := false
+	for i in 180:
+		await physics_frame
+		if dodged_at < 0 and rusher.state == "attack":
+			dodged_at = i
+			p.teleport(p.global_position + Vector3(6, 0, 0)) # sidestep
+		if dodged_at >= 0 and rusher.stun > 1.0:
+			dazed = true
+			break
+	check("a rusher that misses crashes into the wall and is dazed", dazed and p.hp == p.max_hp, "charged %s, dazed %s" % [dodged_at >= 0, dazed])
+	rusher.queue_free()
+
+	# 105. Shield blob: the point glances off, the hammer smashes the shield; a shield bash smashes it too
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	mon = await _dummy(p.global_position + Vector3(0, 0.1, -2.0), "shield")
+	mon.look_at(p.global_position, Vector3.UP)
+	p.ai_attack = true
+	await frames(24)
+	var glanced := mon.hp == 10 and mon.shield_hp == 2
+	await frames(20)
+	mon.global_position = p.global_position + Vector3(0, 0.1, -2.0)
+	await _hold_attack(t.hammer_hold + 0.1)
+	await frames(20)
+	var smashed := mon.shield_hp == 0 and mon.hp < 10
+	mon.queue_free()
+	mon = await _dummy(p.global_position + Vector3(0, 0.1, -1.4), "shield")
+	mon.look_at(p.global_position, Vector3.UP)
+	p.ai_guard = true
+	await frames(20)
+	p.ai_attack = true
+	await frames(20)
+	p.ai_guard = false
+	check("a shield: the point glances off, the hammer smashes it, a shield bash smashes it", glanced and smashed and p.poleaxe.move == "bash" and mon.shield_hp == 0,
+		"glanced %s, smashed %s, bash %s" % [glanced, smashed, mon.shield_hp == 0])
+	mon.queue_free()
+
+	# 106. Brute: armour shrugs off the stagger of a thrust; the hammer staggers it
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	mon = await _dummy(p.global_position + Vector3(0, 0.1, -2.2), "brute")
+	mon.stun = 0.0
+	mon.state = "windup"
+	mon.state_t = 5.0
+	p.ai_attack = true
+	await frames(12)
+	var shrugged := mon.hp < 10 and mon.stun <= 0.0
+	await frames(20)
+	mon.global_position = p.global_position + Vector3(0, 0.1, -2.2)
+	await _hold_attack(t.hammer_hold + 0.1)
+	await frames(15)
+	check("a brute takes a thrust without flinching; the hammer staggers it", shrugged and mon.stun > 0.9, "shrugged %s, stun %.1f" % [shrugged, mon.stun])
+	mon.queue_free()
+
+	# 107. Counter a windup (x1.5, rounded up) and punish a whiff (+1)
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	mon = await _dummy(p.global_position + Vector3(0, 0.1, -1.6))
+	mon.stun = 0.0
+	mon.state = "windup"
+	mon.state_t = 5.0
+	p.ai_attack = true
+	await frames(24)
+	var countered := 10 - mon.hp
+	await frames(20)
+	mon.global_position = p.global_position + Vector3(0, 0.1, -1.6)
+	mon.hp = 10
+	mon.stun = 0.0
+	mon.state = "recover"
+	mon.state_t = 5.0
+	mon.whiffed = true
+	p.ai_attack = true
+	await frames(24)
+	check("a thrust into a windup counters for 2; into a missed attack's recovery punishes for 2", countered == 2 and mon.hp == 8,
+		"counter %d, punish %d" % [countered, 10 - mon.hp])
+	mon.queue_free()
+
+	# 108. The hammer knocks a blob into a pillar (splat, +1) or into another blob (it bowls it over)
+	await _fresh_player(Vector3(-91.2, 0.6, -48))
+	p.inventory.add("poleaxe")
+	p.facing = Vector3.LEFT
+	mon = await _dummy(Vector3(-93.2, 0.7, -48))
+	await _hold_attack(t.hammer_hold + 0.1)
+	await frames(40)
+	var splat := mon.hp
+	mon.queue_free()
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	mon = await _dummy(p.global_position + Vector3(0, 0.1, -2.0))
+	other = await _dummy(p.global_position + Vector3(0, 0.1, -4.4))
+	await _hold_attack(t.hammer_hold + 0.1)
+	await frames(40)
+	check("hammered into a pillar a blob splats (4 + 1); into another blob it bowls it (1)", splat == 5 and other.hp == 9, "splat blob hp %d, bowled blob hp %d" % [splat, other.hp])
+	mon.queue_free()
+	other.queue_free()
+
+	# 109. Down the combat hill you pass fast_blade_speed, and the running blade does 3 instead of 2
+	await _fresh_player(m["combat_hill_top"])
+	p.inventory.add("poleaxe")
+	mon = await _dummy(Vector3(-74, 0.7, -27))
+	p.ai_move = Vector2(1, 0)
+	var at_attack := 0.0
+	for i in 300:
+		await physics_frame
+		if at_attack == 0.0 and p.global_position.x > -79.0:
+			at_attack = p.flat_speed()
+			p.ai_attack = true
+		if at_attack > 0.0 and mon.hp < 10:
+			break
+	p.ai_move = Vector2.ZERO
+	await frames(30)
+	check("the downhill runs you past %.0f m/s (%.1f) and the running blade does 3" % [t.fast_blade_speed, at_attack], at_attack > t.fast_blade_speed and p.poleaxe.move == "run" and mon.hp == 7,
+		"%.1f m/s, move %s, blob hp %d" % [at_attack, p.poleaxe.move, mon.hp])
+	mon.queue_free()
+
+	# 110. Shield surf: jump holding guard at the hilltop, land on your shield and ride it down past top speed into a blob
+	await _fresh_player(m["combat_hill_top"])
+	p.inventory.add("poleaxe")
+	mon = await _dummy(Vector3(-72, 0.7, -27))
+	p.ai_move = Vector2(1, 0)
+	p.ai_guard = true
+	await frames(20)
+	p.ai_jump = true
+	await frames(4)
+	p.ai_jump = false
+	var surfed := false
+	var fastest := 0.0
+	for i in 300:
+		await physics_frame
+		surfed = surfed or p.surfing
+		if p.surfing:
+			fastest = maxf(fastest, p.flat_speed())
+		if mon.hp < 10:
+			break
+	p.ai_move = Vector2.ZERO
+	p.ai_guard = false
+	check("shield surf down the hill reaches %.1f m/s (over top speed %.0f) and bumps a blob for 2" % [fastest, t.top_speed], surfed and fastest > t.top_speed and mon.hp == 8,
+		"surfed %s, fastest %.1f m/s, blob hp %d" % [surfed, fastest, mon.hp])
+	mon.queue_free()
+	await frames(20)
+
+	# 111. Spikes on its head: a pound onto it hurts you, homing skips it, and only landing on your shield pogos off it
+	await _fresh_player(arena + Vector3(8, 0, 0))
+	p.inventory.add("poleaxe")
+	mon = await _dummy(arena + Vector3(0, 0.1, 0), "blob", true)
+	await _hover(mon.global_position + Vector3(0, 3.0, 0))
+	p.ai_attack = true
+	for i in 40:
+		await physics_frame
+	var pound_hurt := p.hp < p.max_hp and mon.hp == 10
+	await _fresh_player(arena + Vector3(0, 0, 4))
+	p.inventory.add("poleaxe")
+	p.ai_jump = true
+	await frames(10)
+	p.ai_jump = false
+	p.ai_target = true
+	p.ai_attack = true
+	await frames(2)
+	var no_homing := p.homing == null
+	p.ai_target = false
+	await frames(40)
+	await _fresh_player(arena + Vector3(8, 0, 0))
+	p.inventory.add("poleaxe")
+	p.ai_guard = true
+	await _hover(mon.global_position + Vector3(0, 3.0, 0))
+	var bounced := false
+	for i in 40:
+		await physics_frame
+		bounced = bounced or p.velocity.y > t.pogo_speed * 0.8
+	p.ai_guard = false
+	check("spiked head: a pound onto it hurts you, homing skips it, landing on your shield pogos off it (2 damage)", pound_hurt and no_homing and bounced and mon.hp == 8 and p.hp == p.max_hp,
+		"pound hurt %s, homing skipped %s, surf bounced %s, blob hp %d, your hp %d" % [pound_hurt, no_homing, bounced, mon.hp, p.hp])
+	mon.queue_free()
+
+	# 112. Focus: locked on at the poleaxe's measure fills focus in about 2 s; the next attack is a flash step for 4
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	mon = await _dummy(p.global_position + Vector3(0, 0.1, -4.5))
+	p.ai_target = true
+	await frames(int(60.0 / t.focus_rate) + 6)
+	var full := p.focus_meter >= 1.0
+	p.ai_attack = true
+	await frames(25)
+	var gap := (mon.global_position - p.global_position)
+	p.ai_target = false
+	check("locked on %.0f-%.1f m away, focus fills in %.1f s; the flash step closes to tip range and does 4" % [t.focus_near, t.focus_far, 1.0 / t.focus_rate], full and p.poleaxe.move == "flash" and mon.hp == 6,
+		"full %s, move %s, blob hp %d, gap %.1f m" % [full, p.poleaxe.move, mon.hp, Vector2(gap.x, gap.z).length()])
+	mon.queue_free()
+
+	# 113. Hit-cancel: a thrust that connects can go straight into the next before its recovery ends
+	await _fresh_player(arena)
+	p.inventory.add("poleaxe")
+	mon = await _dummy(p.global_position + Vector3(0, 0.1, -1.6))
+	p.ai_attack = true
+	var cancelled_at := -1
+	for i in 18:
+		await physics_frame
+		if p.poleaxe.move == "thrust" and not p.poleaxe._hit.is_empty() and p.poleaxe._elapsed() > Poleaxe.MOVES["thrust"]["to"]:
+			p.ai_attack = true
+		if p.poleaxe.move == "thrust2":
+			cancelled_at = i
+			break
+	check("a thrust that hits cancels into the next before its %.2f s is up" % Poleaxe.MOVES["thrust"]["dur"], cancelled_at >= 0 and cancelled_at < int(Poleaxe.MOVES["thrust"]["dur"] * 60.0),
+		"next thrust on frame %d" % cancelled_at)
+	mon.queue_free()
+
+	# 114. A wolf you keep in front of you still bites after its patience runs out (the old pack never bit)
+	await _fresh_player(arena)
+	var wolf := Monster.spawn(level, p.global_position + Vector3(0, 0.1, -3.5), "wolf")
+	wolf.drop_heart = false
+	p.facing = Vector3.FORWARD
+	var bit_at := -1
+	for i in int((Monster.WOLF_PATIENCE + 1.5) * 60.0):
+		await physics_frame
+		p.global_position.x = arena.x
+		p.global_position.z = arena.z
+		var to := wolf.global_position - p.global_position
+		p.facing = Vector3(to.x, 0, to.z).normalized() # keep it in front
+		if p.hp < p.max_hp:
+			bit_at = i
+			break
+	check("a wolf kept in front of you bites within %.1f s anyway" % (Monster.WOLF_PATIENCE + 1.5), bit_at >= 0, "bit after %.1f s" % (bit_at / 60.0))
+	wolf.queue_free()
