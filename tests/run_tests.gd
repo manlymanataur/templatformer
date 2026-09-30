@@ -327,6 +327,7 @@ func _combat_tests() -> void:
 	await _combo_tests(arena)
 	await _challenge_tests(arena)
 	await _colossus_tests()
+	await _feel_fix_tests()
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -1791,13 +1792,19 @@ func _combo_tests(arena: Vector3) -> void:
 	await frames(3)
 	p.ai_jump = false
 	var left := false
+	var landed_speed := 0.0
 	for i in 120:
 		await physics_frame
 		left = left or not p.is_on_floor()
 		if left and p.is_on_floor():
+			await frames(2) # the landing trims the boost on the next step
+			landed_speed = p.flat_speed()
 			break
 	p.ai_move = Vector2.ZERO
 	var dist := Vector2(p.global_position.x - from.x, p.global_position.z - from.z).length()
+	var keep := t.top_speed + (t.long_jump_speed - t.top_speed) * t.long_jump_keep
+	check("landing a long jump keeps only %.0f%% of its boost: %.1f m/s, not %.0f" % [t.long_jump_keep * 100.0, keep, t.long_jump_speed],
+		landed_speed > t.top_speed and landed_speed < keep + 0.5, "%.1f m/s on landing" % landed_speed)
 	var want_long := 2.0 * t.long_jump_up / t.gravity * t.long_jump_speed
 	check("pound + direction rolls, and a jump out of the roll is a %.1f m long jump" % want_long, rolled and dist > want_long - 1.0,
 		"rolled %s, jumped %.1f m" % [rolled, dist])
@@ -2031,3 +2038,86 @@ func _colossus_tests() -> void:
 		broke == [true, true] and col.kneel == 1.0 and low < 2.5 and col.felled,
 		"shins broken %s, kneel %.1f, forehead at %.1f m, felled %s" % [broke, col.kneel, low, col.felled])
 	await _fresh_player(m["colossus_arena"])
+
+## jovi's playtest notes (2026-09-30): camera on locked-on chains, the ledge-pound long jump, boost pads.
+func _feel_fix_tests() -> void:
+	var m: Dictionary = level.marks
+	var t: Tuning = level.t
+
+	# 92. A locked-on homing chain up the pogo spikes doesn't turn the camera round
+	var rig: CameraRig = get_nodes_in_group("camera_rig")[0]
+	await _fresh_player(m["moves_pogo"])
+	p.inventory.add("spear")
+	rig.yaw = 0.0 # looking -z, up the spikes
+	p.ai_target = true
+	await frames(20)
+	var yaw0 := rig.yaw
+	var swing := 0.0
+	p.ai_move = Vector2(0, -0.4)
+	p.ai_jump = true
+	var bounces := 0
+	var was_homing := false
+	for i in 300:
+		await physics_frame
+		swing = maxf(swing, absf(angle_difference(yaw0, rig.yaw)))
+		if p.homing != null:
+			was_homing = true
+		elif was_homing:
+			was_homing = false
+			bounces += 1
+		p.ai_attack = not p.is_on_floor() and p.velocity.y < 1.0 and p.homing == null and bounces < 2
+		if bounces >= 2:
+			break
+	p.ai_attack = false
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	await frames(40)
+	swing = maxf(swing, absf(angle_difference(yaw0, rig.yaw)))
+	p.ai_target = false
+	check("a locked-on homing chain keeps the camera facing ahead (turned under 45°)", bounces == 2 and swing < deg_to_rad(45.0),
+		"bounces %d, camera turned %.0f°" % [bounces, rad_to_deg(swing)])
+
+	# 93. Ledge grab, pull up, pound onto the ledge, roll out, long jump: ledge_long_mult stronger
+	await _fresh_player(m["moves_ledge"])
+	p.ai_move = Vector2(0, -1)
+	var jumped := false
+	var pounded := false
+	var launched := Vector3.ZERO
+	for i in 300:
+		await physics_frame
+		if not jumped and p.global_position.z < -73.8:
+			p.ai_jump = true
+			jumped = true
+		elif jumped and p.hang == Vector3.ZERO and p.velocity.y < 0.0 and not pounded:
+			p.ai_jump = false
+		if jumped and not pounded and p._ledge_up_t < 0.5 and not p.is_on_floor() and p.global_position.z < -76.6:
+			p.ai_jump = false
+			p.ai_attack = true # right out of the pull-up, over the ledge: pound onto it
+			pounded = true
+		if pounded and p.roll_t > 0.0 and p.roll_kind == "roll" and p.is_on_floor() and not p.ai_jump:
+			p.ai_jump = true # jump out of the roll
+		if p.long_jumping:
+			launched = p.velocity
+			break
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	var want_h := t.long_jump_speed * t.ledge_long_mult
+	var want_up := t.long_jump_up * t.ledge_long_mult
+	var h := Vector2(launched.x, launched.z).length()
+	check("ledge grab, pound, roll, long jump launches at %.0f m/s and %.1f m/s up (a plain long jump: %.0f and %.0f)" % [want_h, want_up, t.long_jump_speed, t.long_jump_up],
+		pounded and absf(h - want_h) < 0.6 and absf(launched.y - want_up) < 0.6, "pounded %s, launched %.1f m/s forward, %.1f up" % [pounded, h, launched.y])
+	await _fresh_player(m["moves_ledge"])
+
+	# 94. The boost pad's speed lasts boost_hold before bleeding, so you reach the quarter pipe at full speed
+	await place(m["pipe_start"])
+	p.ai_move = Vector2(0, -1)
+	var at_pipe := 0.0
+	for i in 240:
+		await physics_frame
+		if p.global_position.z < -48.0:
+			at_pipe = p.flat_speed()
+			break
+	p.ai_move = Vector2.ZERO
+	await frames(120)
+	check("a boost pad holds %.0f m/s for %.1f s: you reach the quarter pipe still going %.0f" % [t.boost_pad_speed, t.boost_hold, t.boost_pad_speed],
+		at_pipe > t.boost_pad_speed - 1.0, "%.1f m/s at the pipe" % at_pipe)
