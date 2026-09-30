@@ -6,6 +6,7 @@ var t: Tuning
 var player: Player
 var label: Label
 var sel := 0
+const ROWS := 12 ## values shown at once
 var shown := true
 
 func _ready() -> void:
@@ -40,7 +41,14 @@ func _process(_dt: float) -> void:
 	var s := "speed %5.1f   %s   slope %2d°%s\n" % [player.speed(), "ground" if player.is_on_floor() else "air",
 		int(rad_to_deg(player.up_direction.angle_to(Vector3.UP))), "   LOCKED" if player.target else ""]
 	s += "Tab hide · [ ] pick · - = change · Backspace reset · R respawn\nF attack (hold to charge spin) · E pick up, put down, plant · Shift/Z lock on (tap to roll) · 1 2 3 items · Enter inventory\nG warp and debug · P feedback pin · O load a pin\n\n"
-	for i in Tuning.EDITABLE.size():
+	# a window of ROWS values that scrolls with the selector, so it never runs off the screen
+	var count := Tuning.EDITABLE.size()
+	var first := clampi(sel - ROWS / 2, 0, maxi(count - ROWS, 0))
+	var last := mini(first + ROWS, count)
+	s += ("   ...%d more\n" % first) if first > 0 else "\n"
+	for i in range(first, last):
 		var n := Tuning.EDITABLE[i]
 		s += ("> " if i == sel else "   ") + "%s  %.2f\n" % [n, t.get(n)]
+	if last < count:
+		s += "   ...%d more\n" % (count - last)
 	label.text = s

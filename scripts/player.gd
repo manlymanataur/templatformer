@@ -92,6 +92,11 @@ var _teleported := 0 ## frames until moving floors pass their motion on again
 var roll_speed_now := 0.0 ## a roll keeps the speed you rolled at (and gains downhill)
 var pound_t := -1.0 ## ground pound: >= 0 while pounding (time since it started)
 var pound_land := 99.0 ## seconds since a pound landed on flat ground (a jump now is a high jump)
+var long_jumping := false ## in the air from a long jump; landing trims the speed boost (long_jump_keep)
+var boost_t := 0.0 ## time left before a boost pad's overspeed starts to bleed off
+var _ledge_up_t := 99.0 ## seconds since you pulled up out of a ledge hang
+var _pound_ledge := false ## this pound started right after a ledge pull-up
+var _ledge_roll := false ## this roll came out of such a pound: its long jump is stronger
 var _pogo_last: Node3D = null ## what you last bounced off; homing skips it until you land
 var _flick: MeshInstance3D
 var _flick_t := 0.0
@@ -186,6 +191,7 @@ func flat_speed() -> float:
 
 func boost(dir: Vector3) -> void:
 	velocity = dir.normalized() * t.boost_pad_speed
+	boost_t = t.boost_hold
 
 ## Launch pads: replace your velocity outright. Counts as a fresh jump for the chain.
 func launch(v: Vector3) -> void:
@@ -585,6 +591,7 @@ func _physics_process(dt: float) -> void:
 		pass # mid-pound: the attack button waits until you land or bounce
 	elif attack_pressed and not is_on_floor() and not target_held and _can_pound():
 		pound_t = 0.0 # air attack without lock-on: ground pound (no spear needed)
+		_pound_ledge = _ledge_up_t < 0.5
 	elif inventory.has("spear") and carrying == null:
 		if attack_pressed and not is_on_floor() and _start_homing():
 			pass
@@ -615,9 +622,21 @@ func _physics_process(dt: float) -> void:
 	var on_floor := is_on_floor() and air_lock <= 0.0
 	if on_floor and not _was_on_floor:
 		land_time = 0.0
+		if long_jumping:
+			# a long jump carries you far, but only part of its speed boost survives the landing
+			var hv := Vector3(velocity.x, 0, velocity.z)
+			var top := t.top_speed * _size_mult()
+			if hv.length() > top:
+				hv = hv.normalized() * (top + (hv.length() - top) * t.long_jump_keep)
+				velocity.x = hv.x
+				velocity.z = hv.z
 	elif on_floor:
 		land_time += dt
 	pound_land += dt
+	_ledge_up_t += dt
+	boost_t = maxf(boost_t - dt, 0.0)
+	if on_floor and roll_t <= 0.0:
+		long_jumping = false
 
 	roll_buffer = maxf(roll_buffer - dt, 0.0)
 	if roll_buffer > 0.0 and roll_t <= 0.0 and on_floor and carrying == null:
@@ -724,7 +743,7 @@ func _ground_step(dt: float, wish: Vector3) -> void:
 	else:
 		v = v.move_toward(Vector3.ZERO, t.friction * dt)
 	var slope_pull := (g - n * g.dot(n)).dot(v.normalized())
-	if v.length() > top and absf(slope_pull) < 1.0: # on the flat, overspeed bleeds back; slopes act as usual
+	if v.length() > top and absf(slope_pull) < 1.0 and boost_t <= 0.0: # on the flat, overspeed bleeds back (not right after a boost pad); slopes act as usual
 		v = v.move_toward(v.normalized() * top, t.overspeed_decay * dt)
 	v = v.limit_length(t.boost_speed)
 	up_direction = n
@@ -801,6 +820,7 @@ func _wall_jump(wn: Vector3) -> void:
 	jump_chain = 0
 
 func _start_roll(wish: Vector3) -> void:
+	_ledge_roll = false
 	var dir := wish.normalized() if wish.length() > 0.2 else _flat_facing()
 	roll_kind = "roll"
 	if target_held:
@@ -835,7 +855,10 @@ func _roll_step(dt: float, on_floor: bool, jump_pressed := false) -> void:
 	if roll_kind == "roll" and jump_pressed and on_floor:
 		# long jump: out of a roll you fly forward, low and far
 		roll_t = 0.0
-		velocity = roll_dir * maxf(t.long_jump_speed, roll_speed_now) * _size_mult() + Vector3.UP * t.long_jump_up
+		var mult := t.ledge_long_mult if _ledge_roll else 1.0
+		velocity = (roll_dir * maxf(t.long_jump_speed, roll_speed_now) * _size_mult() + Vector3.UP * t.long_jump_up) * mult
+		long_jumping = true
+		_ledge_roll = false
 		global_position += Vector3.UP * 0.05
 		jumping = false
 		buffer = 0.0
@@ -1091,6 +1114,7 @@ func _hang_step(wish: Vector3, jump_pressed: bool) -> void:
 		velocity = -hang_n * 3.5 + Vector3.UP * 8.0
 		hang = Vector3.ZERO
 		air_lock = 0.1
+		_ledge_up_t = 0.0
 	elif into < -0.5:
 		velocity = hang_n * 2.0
 		hang = Vector3.ZERO
@@ -1147,6 +1171,7 @@ func _pound_step(dt: float, on_floor: bool, wish: Vector3) -> void:
 		velocity = Vector3.ZERO
 		if wish.length() > 0.5:
 			_start_roll(wish)
+			_ledge_roll = _pound_ledge # ledge pull-up, pound, roll: its long jump gets ledge_long_mult
 			return
 		pound_land = 0.0
 		return
@@ -1177,6 +1202,8 @@ func _start_homing() -> bool:
 	if best == null:
 		return false
 	homing = best
+	if target_held and best.is_in_group("targets"):
+		target = best # the lock-on follows the chain, so the camera looks ahead, not back at the last one
 	homing_t = best_d / t.homing_speed + 0.25
 	spear.start("air")
 	return true

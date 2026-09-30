@@ -49,9 +49,14 @@ func _physics_process(dt: float) -> void:
 	var f := player.focus() as CharacterBody3D
 	global_position = global_position.lerp(f.global_position + Vector3.UP * zoom, clampf(t.cam_lag * dt, 0.0, 1.0))
 	var hv := Vector3(f.velocity.x, 0, f.velocity.z)
+	var to_target := Vector3.ZERO
 	if player.target != null:
-		var d := player.target.global_position - player.global_position
-		yaw = lerp_angle(yaw, atan2(-d.x, -d.z), clampf(8.0 * dt, 0.0, 1.0))
+		to_target = player.target.global_position - player.global_position
+		to_target.y = 0.0
+	if player.target != null and to_target.length() < 2.0:
+		pass # right above or below the target (bouncing off it): hold still rather than spin round
+	elif player.target != null:
+		yaw = lerp_angle(yaw, atan2(-to_target.x, -to_target.z), clampf(8.0 * dt, 0.0, 1.0))
 	elif player.strafing:
 		# Ocarina's parallel targeting: swing behind the way you're locked facing
 		yaw = lerp_angle(yaw, atan2(-player.lock_dir.x, -player.lock_dir.z), clampf(10.0 * dt, 0.0, 1.0))

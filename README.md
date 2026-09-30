@@ -26,7 +26,8 @@ Locally: open this folder in Godot 4.5 and press F5.
 | Climb | push into vines (or a trunk) to climb as high as they go; jump kicks off | |
 | Ledge grab | fall against a wall whose top is within 1.2 m above you: you hang. Push on or jump to pull up, pull away to drop. Iron is too smooth to grab | |
 | Ground pound | attack in the air without lock-on (hands empty; no spear needed): a pause, then straight down at 30 m/s. Onto a monster or spikes it hits and bounces you up (pound again, or hold lock-on and attack to home in on the next). Onto flat ground, jump right away for a 5.4 m high jump, or hold a direction to roll out. Onto a slope, the fall turns into downhill speed | |
-| Long jump | jump out of a roll: 20 m/s forward, about 12 m | |
+| Long jump | jump out of a roll: 20 m/s forward, about 12 m. You land with only 40% of the speed above your running top speed. Grab a ledge, pull up, ground pound onto it straight away, roll out and jump: that long jump is 15% stronger (23 m/s) | |
+| Boost pad | 30 m/s that holds for 1.5 s before it starts bleeding off | |
 | Combos | a wall kick counts as the first jump of the chain; rolls keep their speed and gain it downhill; slopes give the speed a triple jump needs | |
 | Grind rail | land or walk onto a rail. Downhill speeds you up, uphill slows you; jump hops off | |
 | Spin attack | hold attack until the tip glows, then let go | |
@@ -42,7 +43,7 @@ Locally: open this folder in Godot 4.5 and press F5.
 | Respawn | R | Back |
 
 The panel in the corner edits every feel number live: `[` `]` pick a value, `-` `=` change it by 10%,
-Backspace resets it, Tab hides the panel. Changes are saved and survive restarts.
+Backspace resets it, Tab hides the panel. The list scrolls with the selector. Changes are saved and survive restarts.
 
 ### Playtest tools
 
