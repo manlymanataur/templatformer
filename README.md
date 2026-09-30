@@ -21,11 +21,11 @@ Locally: open this folder in Godot 4.5 and press F5.
 | Camera | mouse (click to capture, Esc to release), or I J K L | right stick |
 | Spear attack (once you've found it) | F or left click | X |
 | Combo / long slash | tap attack up to 3 times / attack while running | |
-| Homing attack / air slash | attack in the air: you home in on the nearest monster or spike ball ahead (or what you're locked on to), hit it and bounce up, ready to home in on the next. Nothing in reach: an air slash | |
+| Homing attack / air slash | attack in the air while holding lock-on: you home in on the nearest monster or spike ball ahead, hit it and bounce up, ready to home in on the next (it doesn't stick to your lock-on target, so chains keep going). Nothing in reach: an air slash | |
 | Perfect dodge | get hit during a roll's i-frames: no damage, and the world slows to 30% for 1.5 s while you don't | |
 | Climb | push into vines (or a trunk) to climb as high as they go; jump kicks off | |
 | Ledge grab | fall against a wall whose top is within 1.2 m above you: you hang. Push on or jump to pull up, pull away to drop. Iron is too smooth to grab | |
-| Ground pound | E in the air with empty hands: a pause, then straight down at 30 m/s. Onto a monster or spikes it hits and bounces you up (then home in on the next with attack, or pound again). Onto flat ground, jump right away for a 5.4 m high jump, or hold a direction to roll out. Onto a slope, the fall turns into downhill speed | |
+| Ground pound | attack in the air without lock-on (hands empty; no spear needed): a pause, then straight down at 30 m/s. Onto a monster or spikes it hits and bounces you up (pound again, or hold lock-on and attack to home in on the next). Onto flat ground, jump right away for a 5.4 m high jump, or hold a direction to roll out. Onto a slope, the fall turns into downhill speed | |
 | Long jump | jump out of a roll: 20 m/s forward, about 12 m | |
 | Combos | a wall kick counts as the first jump of the chain; rolls keep their speed and gain it downhill; slopes give the speed a triple jump needs | |
 | Grind rail | land or walk onto a rail. Downhill speeds you up, uphill slows you; jump hops off | |

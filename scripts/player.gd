@@ -447,6 +447,7 @@ func _next_to_cube(d: Vector3) -> bool:
 
 ## The context button: whatever makes sense where you are. Holding something, you put it down (a seed
 ## plants on soil, mud or roots). Otherwise you pick up a seed or the spider, or pull a bomb off a plant.
+## (The ground pound is the air attack without lock-on, not this button.)
 func context() -> void:
 	if held_seed != null:
 		release_seed()
@@ -454,8 +455,6 @@ func context() -> void:
 		release_bomb()
 	elif pilot != null:
 		return
-	elif not is_on_floor() and _can_pound():
-		pound_t = 0.0
 	elif _grab_seed():
 		pass
 	elif _pick_bomb():
@@ -582,6 +581,10 @@ func _physics_process(dt: float) -> void:
 		release_bomb()
 	elif held_seed != null:
 		pass
+	elif pound_t >= 0.0:
+		pass # mid-pound: the attack button waits until you land or bounce
+	elif attack_pressed and not is_on_floor() and not target_held and _can_pound():
+		pound_t = 0.0 # air attack without lock-on: ground pound (no spear needed)
 	elif inventory.has("spear") and carrying == null:
 		if attack_pressed and not is_on_floor() and _start_homing():
 			pass
@@ -1096,7 +1099,7 @@ func _can_pound() -> bool:
 	return pound_t < 0.0 and not hands_full() and homing == null and rail == null and hang == Vector3.ZERO \
 		and climbing == null and grapple_t <= 0.0 and not magnet_flying
 
-## Ground pound (context button in the air, hands empty): a short pause, then straight down at pound_speed.
+## Ground pound (attack in the air without lock-on, hands empty): a short pause, then straight down at pound_speed.
 ## - Onto a monster or spikes: it hits (2) and bounces you up, ready to pound or home in on the next.
 ## - Onto flat ground: a shockwave hurts what's right around you, and jumping within pound_jump_window is a
 ##   high jump. Holding a direction as you land rolls you out instead (jump out of the roll: long jump).
@@ -1149,24 +1152,21 @@ func _pound_step(dt: float, on_floor: bool, wish: Vector3) -> void:
 		return
 	velocity = Vector3.DOWN * t.pound_speed
 
-## Air attack: home in on the nearest thing to hit ahead of you (what you're locked on to comes first).
-## Returns false if there's nothing in reach, and the spear does an air slash instead.
+## Air attack while holding lock-on: home in on the nearest thing to hit ahead of you. It doesn't stick to
+## your lock-on target, so after a bounce it chains on to the next one. Returns false if there's nothing in
+## reach, and the spear does an air slash instead. (Without lock-on the air attack is a ground pound.)
 func _start_homing() -> bool:
 	var best: Node3D = null
 	var best_d := t.homing_range
 	var f := _flat_facing()
-	var cands: Array = []
-	if target != null and is_instance_valid(target) and (target.is_in_group("hurtable") or target.is_in_group("pogo")):
-		cands = [target]
-	else:
-		cands = get_tree().get_nodes_in_group("hurtable") + get_tree().get_nodes_in_group("pogo")
+	var cands: Array = get_tree().get_nodes_in_group("hurtable") + get_tree().get_nodes_in_group("pogo")
 	for n in cands:
 		var node := n as Node3D
 		if node == self or node is Player or node is CrackedWall or node == _pogo_last:
 			continue
 		var d := node.global_position - global_position
 		var ahead := Vector2(d.x, d.z).length() < 1.5 or Vector3(d.x, 0, d.z).normalized().dot(f) >= 0.3 # right overhead counts
-		if d.length() > best_d or (target != node and not ahead):
+		if d.length() > best_d or not ahead:
 			continue
 		var q := PhysicsRayQueryParameters3D.create(global_position, node.global_position, 1, [get_rid()])
 		var hit := get_world_3d().direct_space_state.intersect_ray(q)

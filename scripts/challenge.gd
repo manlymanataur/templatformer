@@ -4,7 +4,7 @@ extends Node3D
 ## A door in the moves yard sends you in; the goal (a spinning star) sends you back out beside the door and
 ## marks it cleared (the door turns gold). Fall off a course and you start it again.
 ## The rooms:
-##   Pogo chain  pound (E in the air) onto four spike balls in a row to bounce across a 25 m drop
+##   Pogo chain  pound (attack in the air) onto four spike balls in a row to bounce across a 25 m drop
 ##   Rail run    two downhill rails, each kicking you across a 10 m gap
 ##   Long jump   three 10 m gaps with 4 m platforms: no runway, so pound, roll out and long-jump
 

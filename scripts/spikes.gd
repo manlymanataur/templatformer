@@ -1,6 +1,6 @@
 class_name Spikes
 extends StaticBody3D
-## A spiked ball: touch it and it hurts you. A homing attack (air attack near it) bounces you off it
+## A spiked ball: touch it and it hurts you. A homing attack (locked-on air attack near it) or a ground pound bounces you off it
 ## unharmed instead, like a pogo, so a chain of them is a ladder (see Player._homing_step).
 
 const R := 0.5

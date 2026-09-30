@@ -4,7 +4,7 @@ extends RefCounted
 ## Climb tower: a vine face you can climb as high as it goes (8 m), then pull yourself over the top.
 ## Rail: from the tower top a rail runs 4 m downhill. Grinding it builds speed, and the kicker at its end throws
 ##   you across a 10 m gap to a 2 m platform.
-## Pogo spikes: spiked balls hurt to touch, but an air attack homes in and bounces you off them. Two of them
+## Pogo spikes: spiked balls hurt to touch, but a locked-on air attack homes in and bounces you off them. Two of them
 ##   climb to an 8 m ledge.
 ## Ledge: a 3.5 m block, over a single jump (2.4 m). Catch the edge as you fall against it and pull yourself up.
 
@@ -37,7 +37,7 @@ static func build(lv: Node3D) -> void:
 	rect.call(-4, 4, -90, -82, 0, 8, STONE)
 	Spikes.make(lv, Vector3(0, 3.5, -74))
 	Spikes.make(lv, Vector3(0, 6.5, -78))
-	lv.label(Vector3(0, 2, -66), "air attack near spikes to pogo, or ground pound them (E in the air)", 32)
+	lv.label(Vector3(0, 2, -66), "hold lock-on and attack in the air to home onto spikes, or attack without lock-on to ground pound them", 32)
 	marks["moves_pogo"] = Vector3(0, 0.6, -68)
 	marks["moves_pogo_top"] = 8.0
 
