@@ -48,8 +48,8 @@ extends Resource
 @export var surf_friction := 0.8 ## shield surf: slow-down on the flat (m/s per s)
 @export var surf_turn := 1.8 ## shield surf: steering (radians per second)
 @export var surf_min := 1.5 ## shield surf ends below this speed on the flat
-@export var focus_near := 3.0 ## locked on this far from a monster (or further) builds focus
-@export var focus_far := 5.5 ## ...up to this far
+@export var focus_near := 6.0 ## locked on this far from a monster (or further) builds focus (just outside the doubled poleaxe's reach)
+@export var focus_far := 11.0 ## ...up to this far
 @export var focus_rate := 0.45 ## focus per second (full at 1)
 @export var bomb_throw_speed := 7.0
 @export var bomb_throw_up := 5.0

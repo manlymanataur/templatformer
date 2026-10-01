@@ -2,11 +2,16 @@ class_name Burnable
 extends StaticBody3D
 ## Vines (a solid wall) and grass (ground cover you walk through). Heat sets them alight; they burn
 ## for a moment, shining and spreading fire to whatever they touch, then vines are gone and grass is ash.
+## They follow the plant rules (Plants): vines are climbable and lash posts as well as flammable.
+## With regrow > 0 burnt vines and grass grow back after that many seconds (the moves yard's climbing wall).
 
 var kind := "grass" ## "grass" or "vines"
 var size := Vector3(2, 0.3, 2)
 var burning := false
 var burnt := false
+var regrow := 0.0 ## seconds until a burnt one grows back; 0 never
+var _regrow_t := 0.0
+var _col: CollisionShape3D
 var _warm := 0.0
 var _left := 0.0
 var _mesh: MeshInstance3D
@@ -17,10 +22,11 @@ const IGNITE := {"grass": 0.05, "vines": 0.15} ## seconds of heat before it catc
 const BURN := {"grass": 2.0, "vines": 1.5}
 const SPREAD_REACH := 0.6
 
-static func make(parent: Node, k: String, pos: Vector3, sz: Vector3) -> Burnable:
+static func make(parent: Node, k: String, pos: Vector3, sz: Vector3, regrow_after := 0.0) -> Burnable:
 	var b := Burnable.new()
 	b.kind = k
 	b.size = sz
+	b.regrow = regrow_after
 	parent.add_child(b)
 	b.global_position = pos
 	return b
@@ -40,7 +46,7 @@ static func flame_mesh(h: float) -> MeshInstance3D:
 	return mi
 
 func _ready() -> void:
-	add_to_group("flammable")
+	Plants.mark(self, "vine" if kind == "vines" else "grass") # flammable; vines also climbable and lash posts
 	add_to_group("light_sources")
 	_mesh = MeshInstance3D.new()
 	var bm := BoxMesh.new()
@@ -52,12 +58,12 @@ func _ready() -> void:
 	_mesh.position.y = size.y / 2.0
 	add_child(_mesh)
 	if kind == "vines":
-		var c := CollisionShape3D.new()
+		_col = CollisionShape3D.new()
 		var s := BoxShape3D.new()
 		s.size = size
-		c.shape = s
-		c.position.y = size.y / 2.0
-		add_child(c)
+		_col.shape = s
+		_col.position.y = size.y / 2.0
+		add_child(_col)
 	else:
 		collision_layer = 0 # you walk through grass, and it doesn't block light
 		collision_mask = 0
@@ -85,6 +91,11 @@ func ignite() -> void:
 	_flames.visible = true
 
 func _physics_process(dt: float) -> void:
+	if burnt and regrow > 0.0:
+		_regrow_t += dt
+		if _regrow_t >= regrow:
+			_grow_back()
+		return
 	if not burning:
 		return
 	Lighting.spread_heat(global_position + Vector3.UP * 0.3, SPREAD_REACH + maxf(size.x, size.z) / 2.0, dt, self, self)
@@ -92,11 +103,24 @@ func _physics_process(dt: float) -> void:
 	if _left <= 0.0:
 		burning = false
 		burnt = true
-		if kind == "vines":
+		_regrow_t = 0.0
+		if kind == "vines" and regrow > 0.0:
+			_mesh.visible = false
+			_col.set_deferred("disabled", true)
+			_flames.visible = false
+		elif kind == "vines":
 			queue_free()
 		else:
 			_flames.visible = false
 			_mat.albedo_color = Color(0.15, 0.13, 0.12)
+
+func _grow_back() -> void:
+	burnt = false
+	_warm = 0.0
+	_mesh.visible = true
+	_mat.albedo_color = Color(0.3, 0.6, 0.25) if kind == "grass" else Color(0.18, 0.42, 0.22)
+	if _col != null:
+		_col.set_deferred("disabled", false)
 
 # light source: burning things light the room
 func is_shining() -> bool:

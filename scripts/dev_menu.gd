@@ -32,6 +32,8 @@ const WARPS := [
 	["Rootworks: lash ledge", "root_c_stand"],
 	["Rootworks: lash post", "root_post_stand"],
 	["Rootworks: gear room", "root_gear_room"],
+	["Rootworks: spider cage", "root_cage_stand"],
+	["Rootworks: vine shelf", "root_vine"],
 	["Moves: climb tower", "moves_climb"],
 	["Moves: grind rail", "moves_rail"],
 	["Moves: pogo spikes", "moves_pogo"],
