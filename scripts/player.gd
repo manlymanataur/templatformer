@@ -401,6 +401,8 @@ func stow_spider() -> void:
 ## With the spider already hooked, it lets go. Your hands must be empty.
 func use_lash() -> void:
 	if leash != null:
+		if Sling.yank(self): # a monster on the leash: yank it to your feet (Sling)
+			return
 		leash.queue_free()
 		leash = null
 		return
@@ -429,20 +431,15 @@ func use_lash() -> void:
 		grapple_t = from.distance_to(end) / t.lash_pull_speed + 0.3
 		jumping = false
 		air_lock = 0.2
+	elif c is Monster:
+		Sling.hook(self, c as Monster) # sting and leash it (Lash & Sling)
 	elif c.is_in_group("hurtable") and c != self:
 		c.hurt(1, global_position)
 		if "velocity" in c:
 			c.velocity = (global_position - (c as Node3D).global_position).normalized() * 9.0 + Vector3.UP * 3.0
 
 func _show_flick(a: Vector3, b: Vector3) -> void:
-	var m := _flick.mesh as ImmediateMesh
-	m.clear_surfaces()
-	m.surface_begin(Mesh.PRIMITIVE_LINES)
-	m.surface_add_vertex(a)
-	m.surface_add_vertex(b)
-	m.surface_end()
-	_flick_t = 0.18
-	_flick.visible = true
+	Whip.crack(get_parent(), a, b) # the lash cracks like a whip (jovi): the cord rolls out and snaps at the tip
 
 ## Context button with a seed in your hands: set down in front of you on soil, mud or roots, it plants;
 ## otherwise you throw it (moving) or set it down (standing still).
@@ -708,6 +705,8 @@ func _physics_process(dt: float) -> void:
 	if pilot != null:
 		# you sit still and the stick steers the spider
 		pilot.wish = _wish()
+		if attack_pressed:
+			pilot.bite() # steering the spider, attack is its bite
 		jump_pressed = false
 		jump_held = false
 		attack_pressed = false
@@ -731,6 +730,8 @@ func _physics_process(dt: float) -> void:
 		release_bomb()
 	elif held_seed != null or held_pot != null:
 		pass
+	elif attack_pressed and Sling.leashed(self) != null and Sling.swing(self):
+		pass # a monster on the leash: attack swings it round you (Sling)
 	elif pound_t >= 0.0:
 		pass # mid-pound: the attack button waits until you land or bounce
 	elif attack_pressed and not is_on_floor() and not target_held and _can_pound():

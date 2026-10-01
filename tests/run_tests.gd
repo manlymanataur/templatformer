@@ -343,6 +343,7 @@ func _combat_tests() -> void:
 	await _works_tests(arena)
 	await _powers_tests()
 	await _cellar_tests()
+	await _spider_lash_tests(arena)
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -3024,6 +3025,15 @@ func _works_tests(arena: Vector3) -> void:
 		await physics_frame
 		if deck.offset >= deck.travel - 0.001:
 			break
+	for i in 120: # keep circling (the deck is at its stop, so the crank won't turn) round to the crank's east side
+		var rel := sp.global_position - dcrank.global_position
+		rel.y = 0.0
+		if rel.normalized().x > 0.9:
+			break
+		var tangent := Vector3(rel.z, 0, -rel.x).normalized()
+		var dir := tangent + rel.normalized() * (1.5 - rel.length())
+		p.ai_move = Vector2(dir.x, dir.z).limit_length(1.0)
+		await physics_frame
 	p.ai_move = Vector2(1, 0) # off the deck onto the far bank
 	await frames(60)
 	p.ai_move = Vector2.ZERO
@@ -3843,3 +3853,326 @@ func _cellar_tests() -> void:
 		trap_blob.queue_free()
 	await _mop()
 	await _liquid_player(L)
+
+
+## Spider & lash (jovi, 2026-10-01): gears never turn themselves by what they move; the rope ignores small
+## details; the lash leashes and slings monsters; the spider bites and turns shielded monsters.
+func _spider_lash_tests(arena: Vector3) -> void:
+	var m: Dictionary = level.marks
+	var t: Tuning = level.t
+
+	# SL1. A spider sitting on the arm gear's bridge rides the swing, and the gear doesn't wind itself on
+	var arm: ArmGear = m["works_arm"]
+	await _fresh_player(m["works_arm_stand"])
+	p.inventory.add("spider")
+	p.facing = Vector3.RIGHT
+	await _use("spider")
+	var sp: Spider = p.spider
+	await _use("spider") # back to you: it sits still
+	var n0 := arm.notch()
+	var on_arm := arm.global_position + arm.arm_dir() * (arm.radius + 0.6) + Vector3.UP * (Spider.RADIUS + 0.1)
+	sp.global_position = on_arm
+	sp.velocity = Vector3.ZERO
+	await frames(10)
+	arm.turn(Gear.STEP)
+	await frames(180)
+	var rode := sp.global_position.distance_to(on_arm)
+	check("a spider riding the arm bridge round doesn't wind the gear on: one notch asked, one notch turned",
+		arm.notch() - n0 == 1 and rode > 1.0, "turned %d notches, spider carried %.1f m" % [arm.notch() - n0, rode])
+	arm.turn(-Gear.STEP)
+	await frames(60)
+	p.stow_spider()
+
+	# SL2. Rope wrapped on a gear whose lift carries the spider away: a 1 m turn moves the lift gear_ratio x 1 m
+	# and no further (the carried spider pays out rope over the gear, but that rope isn't a driver)
+	await _fresh_player(Vector3(-74, 0.6, -97.12))
+	var deck_body := AnimatableBody3D.new()
+	deck_body.sync_to_physics = false
+	var dcs := CollisionShape3D.new()
+	var dbox := BoxShape3D.new()
+	dbox.size = Vector3(3, 0.4, 3)
+	dcs.shape = dbox
+	deck_body.add_child(dcs)
+	deck_body.position = Vector3(-81.12, 0.05, -90)
+	level.add_child(deck_body)
+	var lift_gear := Gear.make(level, Vector3(-80, 0, -96), 1.0, deck_body, Vector3(0, 0, 4), t)
+	p.inventory.add("spider")
+	p.facing = Vector3.LEFT
+	await _use("spider")
+	sp = p.spider
+	await _use("spider")
+	sp.global_position = Vector3(-81.12, 0.25 + Spider.RADIUS + 0.05, -90)
+	await frames(10)
+	var rope := Tether.make(level, p, sp, t.leash_length, Color.WHITE)
+	p.leash = rope
+	rope.points = [p.global_position + Tether.LIFT, Vector3(-80, 0.6, -97.12), Vector3(-81.12, 0.6, -96), sp.global_position + Tether.LIFT]
+	rope.turns = [0.0, rope._turn_at(1), rope._turn_at(2), 0.0]
+	await frames(5)
+	var z0 := deck_body.global_position.z
+	var sz0 := sp.global_position.z
+	lift_gear.turn(1.0)
+	await frames(120)
+	var lifted := deck_body.global_position.z - z0
+	check("a gear's lift carrying the spider away doesn't wind the gear on through the rope: 1 m turned moves it %.1f m" % t.gear_ratio,
+		absf(lifted - t.gear_ratio) < 0.05 and absf(lift_gear.wound - 1.0) < 0.05 and sp.global_position.z - sz0 > 0.3 and rope.points.size() >= 3,
+		"lift moved %.2f m, gear wound %.2f m, spider carried %.2f m, bends %d" % [lifted, lift_gear.wound, sp.global_position.z - sz0, rope.points.size() - 2])
+	p.stow_spider()
+	lift_gear.queue_free()
+	deck_body.queue_free()
+
+	# SL3. Dragged on the rope across a 0.5 m kerb and past a thin pole, the spider takes no bends and follows over
+	await _fresh_player(arena)
+	p.inventory.add("spider")
+	p.inventory.add("lash")
+	p.facing = Vector3.RIGHT
+	await _use("spider")
+	sp = p.spider
+	await _use("spider")
+	sp.global_position = arena + Vector3(9, -0.6 + Spider.RADIUS + 0.05, 0)
+	await frames(5)
+	p.ai_target = true
+	await frames(5)
+	await _use("lash")
+	p.ai_target = false
+	var hooked := p.leash != null
+	var kerb: StaticBody3D = level.box(arena + Vector3(5, -0.35, 0), Vector3(0.6, 0.5, 4), Basis(), Color.GRAY)
+	var pole: StaticBody3D = level.box(arena + Vector3(2.5, 0.9, 0.35), Vector3(0.3, 3, 0.3), Basis(), Color.GRAY)
+	var bends := 0
+	p.ai_move = Vector2(-1, 0)
+	for i in 300:
+		await physics_frame
+		if p.leash != null:
+			bends = maxi(bends, p.leash.points.size() - 2)
+		if sp.global_position.x < arena.x + 1.0 or p.global_position.x < arena.x - 30.0:
+			break
+	p.ai_move = Vector2.ZERO
+	check("the rope rides over a 0.5 m kerb and past a 0.3 m pole without bending: the dragged spider follows over them",
+		hooked and bends == 0 and sp.global_position.x < arena.x + 2.0, "hooked %s, bends %d, spider at x %+.1f from the start" % [hooked, bends, sp.global_position.x - arena.x])
+	p.stow_spider()
+	kerb.queue_free()
+	pole.queue_free()
+
+	# SL4. Dragged round a 2 m pillar's corner, the spider slides past it instead of sticking, and the bend lets go
+	await _fresh_player(arena)
+	var pil: StaticBody3D = level.box(arena + Vector3(3, 0.9, -1.6), Vector3(2, 3, 2), Basis(), Color.GRAY)
+	p.inventory.add("spider")
+	p.inventory.add("lash")
+	p.facing = Vector3.RIGHT
+	await _use("spider")
+	sp = p.spider
+	await _use("spider")
+	sp.global_position = arena + Vector3(6, -0.6 + Spider.RADIUS + 0.05, 0)
+	await frames(5)
+	p.ai_target = true
+	await frames(5)
+	await _use("lash")
+	p.ai_target = false
+	hooked = p.leash != null
+	bends = 0
+	p.ai_move = Vector2(0, -1)
+	for i in 300:
+		await physics_frame
+		if p.leash != null:
+			bends = maxi(bends, p.leash.points.size() - 2)
+		if p.global_position.z < arena.z - 24.0:
+			break
+	p.ai_move = Vector2.ZERO
+	await frames(5)
+	var left := p.leash.points.size() - 2 if p.leash != null else -1
+	check("dragged round a 2 m pillar's corner the spider slides past it (no sticking) and the bend lets go",
+		hooked and bends >= 1 and left == 0 and sp.global_position.z < arena.z - 3.0 and p.global_position.z < arena.z - 23.0,
+		"bends %d then %d, spider %.1f m north, you %.1f m north" % [bends, left, arena.z - sp.global_position.z, arena.z - p.global_position.z])
+	p.stow_spider()
+	pil.queue_free()
+
+	# SL5. The spider bites a monster next to it on its own, every spider_bite_every
+	await _fresh_player(arena)
+	p.inventory.add("spider")
+	p.facing = Vector3.RIGHT
+	await _use("spider")
+	sp = p.spider
+	await _use("spider") # back to you: it sits
+	var blob := await _dummy(sp.global_position + Vector3(0, 0.4, -(Spider.RADIUS + 0.55 + 0.3)), "blob", false, 10)
+	var b0 := sp.bites
+	await frames(int(t.spider_bite_every * 2.5 * 60.0))
+	var own_bites := sp.bites - b0
+	check("the spider bites a monster next to it on its own every %.1f s (%.0f each)" % [t.spider_bite_every, t.spider_bite_damage],
+		own_bites >= 2 and own_bites <= 3 and _hp(blob) == 10 - own_bites * int(t.spider_bite_damage), "%d bites in %.1f s, blob at %d of 10" % [own_bites, t.spider_bite_every * 2.5, _hp(blob)])
+	if is_instance_valid(blob):
+		blob.queue_free()
+
+	# SL6. A shield monster facing it: its own bite glances off the shield, a steered bite (attack) cracks it; walking
+	# past along its side turns it round (like a gear), and then the spider's own bite gets its back
+	var guard := await _dummy(sp.global_position + Vector3(0, 0.4, -(Spider.RADIUS + 0.55 + 0.3)), "shield", false, 10)
+	guard.look_at(sp.global_position + Vector3.UP * 0.4, Vector3.UP)
+	sp._bite_cd = 0.0
+	await frames(5)
+	var glanced := _hp(guard) == 10
+	await _use("spider") # steer it
+	sp.facing = Vector3.FORWARD
+	p.ai_attack = true
+	await frames(3)
+	var cracked := guard.shield_hp < 2 and _hp(guard) == 10
+	await frames(20)
+	# walk east past its south side, close in
+	var g0 := guard._fwd()
+	sp.global_position = guard.global_position + Vector3(-1.6, -0.4, Spider.RADIUS + 0.55 + 0.15)
+	sp.velocity = Vector3.ZERO
+	await frames(3)
+	var t0 := sp.turned
+	p.ai_move = Vector2(1, 0)
+	await frames(30)
+	p.ai_move = Vector2.ZERO
+	var turn_deg := rad_to_deg(sp.turned - t0)
+	var g1 := guard._fwd()
+	var to_sp := sp.global_position - guard.global_position
+	to_sp.y = 0.0
+	var back_turned := g1.dot(to_sp.normalized()) < 0.0
+	var hp_before := _hp(guard)
+	sp._bite_cd = 0.0
+	for i in 40: # straight at it (no walking past, so no more turning): its own bite finds the open side
+		var at := guard.global_position - sp.global_position
+		p.ai_move = Vector2(at.x, at.z).normalized() * 0.4
+		await physics_frame
+		if _hp(guard) < hp_before:
+			break
+	p.ai_move = Vector2.ZERO
+	check("its own bite glances off a shield's front; a steered bite cracks it; walking past it turns the shield monster %.0f degrees (its back to the spider) and the next bite lands" % turn_deg,
+		glanced and cracked and turn_deg > 120.0 and back_turned and _hp(guard) < hp_before,
+		"glanced %s, shield %d, turned %.0f deg (front %.2f -> %.2f), hp %d -> %d" % [glanced, guard.shield_hp, turn_deg, g0.dot(g1), g1.dot(to_sp.normalized()), hp_before, _hp(guard)])
+	if is_instance_valid(guard):
+		guard.queue_free()
+	await _use("spider")
+	p.stow_spider()
+
+	# SL7. The lash at a monster cracks like a whip, stings it (1) and leashes it; walk off and you drag it
+	await _fresh_player(arena)
+	p.inventory.add("lash")
+	var mob := await _dummy(arena + Vector3(5, 0, 0), "blob", false, 10)
+	p.facing = Vector3.RIGHT
+	await frames(2)
+	await _use("lash")
+	var whips := 0
+	for n in level.get_children():
+		if n is Whip:
+			whips += 1
+	var leashed := p.leash != null and p.leash.b == mob
+	var stung := _hp(mob) == 9
+	var mob0 := mob.global_position
+	p.ai_move = Vector2(-1, 0)
+	await frames(90)
+	p.ai_move = Vector2.ZERO
+	var rope_len := p.leash.length() if p.leash != null else 0.0
+	check("the lash cracks (a whip), stings a monster for 1 and leashes it on a %.0f m rope; walking off you drag it" % t.lash_leash,
+		whips >= 1 and leashed and stung and mob.global_position.distance_to(mob0) > 3.0 and rope_len < t.lash_leash + 0.3,
+		"whip %d, leashed %s, hp %d, dragged %.1f m, rope %.1f m" % [whips, leashed, _hp(mob), mob.global_position.distance_to(mob0), rope_len])
+
+	# SL8. Attack with it leashed: it swings round you, hits everything it sweeps through, and flies off where you face
+	await place(arena)
+	p.facing = Vector3.RIGHT
+	mob.global_position = arena + Vector3(-2.5, 0, 0)
+	mob.velocity = Vector3.ZERO
+	var near_a := await _dummy(arena + Vector3(0, 0, 2.6), "blob", false, 10)
+	var near_b := await _dummy(arena + Vector3(0, 0, -2.6), "blob", false, 10)
+	await frames(3)
+	p.ai_attack = true
+	await frames(2)
+	var fly := Vector3.ZERO
+	for i in 120:
+		await physics_frame
+		if p.leash == null:
+			fly = mob.velocity
+			break
+	var flat_fly := Vector3(fly.x, 0, fly.z)
+	check("attack swings a leashed monster round you: it hits both monsters beside you (%.0f each) and flies off at %.0f m/s where you face" % [t.sling_damage, t.sling_speed],
+		_hp(near_a) == 10 - int(t.sling_damage) and _hp(near_b) == 10 - int(t.sling_damage) and flat_fly.length() > t.sling_speed * 0.8 and flat_fly.normalized().dot(Vector3.RIGHT) > 0.9,
+		"hp %d and %d, flew %.1f m/s, %.2f along your facing" % [_hp(near_a), _hp(near_b), flat_fly.length(), flat_fly.normalized().dot(Vector3.RIGHT)])
+	for mon in [mob, near_a, near_b]:
+		if is_instance_valid(mon):
+			mon.queue_free()
+
+	# SL9. The lash again with one leashed yanks it to your feet, bowling over one in the way
+	await _fresh_player(arena)
+	p.inventory.add("lash")
+	var far := await _dummy(arena + Vector3(6, 0, 0), "blob", false, 10)
+	p.facing = Vector3.RIGHT
+	await _use("lash")
+	var hooked_far := p.leash != null
+	var between := await _dummy(arena + Vector3(3, 0, 0.3), "blob", false, 10)
+	await _use("lash")
+	await frames(60)
+	var gap := Vector2(far.global_position.x - p.global_position.x, far.global_position.z - p.global_position.z).length()
+	check("the lash again yanks a leashed monster to your feet at %.0f m/s, knocking one in the way, and lets go" % t.yank_speed,
+		hooked_far and gap < 2.5 and _hp(between) < 10 and p.leash == null, "ended %.1f m from you, the one between at %d, leash %s" % [gap, _hp(between), p.leash != null])
+	for mon in [far, between]:
+		if is_instance_valid(mon):
+			mon.queue_free()
+
+	# SL10. The lash tears a shield monster's shield away for good; a brute is too heavy, so it pulls you in
+	await _fresh_player(arena)
+	p.inventory.add("lash")
+	var shielded := await _dummy(arena + Vector3(5, 0, 0), "shield", false, 10)
+	shielded.look_at(p.global_position, Vector3.UP)
+	p.facing = Vector3.RIGHT
+	await _use("lash")
+	var torn := shielded.shield_hp == 0 and _hp(shielded) == 9
+	var torn_at := "shield %d, hp %d" % [shielded.shield_hp, _hp(shielded)]
+	if p.leash != null:
+		p.leash.queue_free()
+		p.leash = null
+	shielded.queue_free()
+	var brute := await _dummy(arena + Vector3(8, 0.3, 0), "brute", false, 10)
+	await frames(2)
+	var x_start := p.global_position.x
+	await _use("lash")
+	await frames(40)
+	var pulled_in := p.global_position.x - x_start
+	check("the lash tears a shield away for good; a brute is too heavy and pulls you in %.1f m" % pulled_in,
+		torn and pulled_in > 4.0 and p.leash == null, "%s, pulled %.1f m" % [torn_at, pulled_in])
+	if is_instance_valid(brute):
+		brute.queue_free()
+
+	# SL11. A leashed monster dragged round a 2 m pillar's corner slides past it too, and the bend lets go
+	await _fresh_player(arena)
+	p.inventory.add("lash")
+	var pil2: StaticBody3D = level.box(arena + Vector3(3, 0.9, -1.8), Vector3(2, 3, 2), Basis(), Color.GRAY)
+	var towed := await _dummy(arena + Vector3(5.5, 0, 0), "blob", false, 10)
+	p.facing = Vector3.RIGHT
+	await _use("lash")
+	hooked = p.leash != null
+	bends = 0
+	p.ai_move = Vector2(0, -1)
+	for i in 300:
+		await physics_frame
+		if p.leash != null:
+			bends = maxi(bends, p.leash.points.size() - 2)
+		if p.global_position.z < arena.z - 16.0:
+			break
+	p.ai_move = Vector2.ZERO
+	await frames(5)
+	left = p.leash.points.size() - 2 if p.leash != null else -1
+	check("a leashed monster dragged round a 2 m pillar's corner slides past it and the bend lets go",
+		hooked and bends >= 1 and left == 0 and towed.global_position.z < arena.z - 3.5,
+		"bends %d then %d, monster %.1f m north" % [bends, left, arena.z - towed.global_position.z])
+	if p.leash != null:
+		p.leash.queue_free()
+		p.leash = null
+	towed.queue_free()
+	pil2.queue_free()
+
+	# SL12. The spider pen's monsters keep to their spots for the spider while you stand at the warp
+	await _fresh_player(m["combat_pen_spider"])
+	var pen := SpiderPens.pen(level, Vector3(-76, 0, 12), [["shield", Vector3(-81, 0.6, 13)], ["knight", Vector3(-76, 0.6, 13)], ["brute", Vector3(-71, 0.9, 13)]], true)
+	await frames(180)
+	var strayed := 0.0
+	for mon in pen.alive:
+		if is_instance_valid(mon):
+			var d: Vector3 = (mon as Monster).global_position - (mon as Monster).home
+			strayed = maxf(strayed, Vector2(d.x, d.z).length())
+	check("the spider pen's shield blob, iron knight and brute keep to their spots (within 1.5 m) while you watch from the warp",
+		pen.alive.size() == 3 and strayed < 1.5, "%d monsters, strayed up to %.1f m" % [pen.alive.size(), strayed])
+	for mon in pen.alive:
+		if is_instance_valid(mon):
+			mon.queue_free()
+	pen.queue_free()
+	await _fresh_player(arena)

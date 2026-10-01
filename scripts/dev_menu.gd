@@ -43,6 +43,8 @@ const WARPS := [
 	["Combat: spiked row", "combat_spiked"],
 	["Combat: wolves", "combat_wolves"],
 	["Combat: wall court", "combat_court"],
+	["Combat: lash & sling pen", "combat_pen_lash"],
+	["Combat: spider bite pen", "combat_pen_spider"],
 	["Test colossus", "colossus_arena"],
 	["Works: entrance", "works_start"],
 	["Works: iron pit and door", "works_iron"],

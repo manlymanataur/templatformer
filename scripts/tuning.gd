@@ -140,6 +140,24 @@ extends Resource
 @export var iron_plough_knock := 12.0 ## a sliding iron block knocks the monster in its way this fast
 @export var fire_spread_delay := 0.45 ## a burning grass patch starts to spread this long after it caught
 @export var fire_damage_every := 0.5 ## monsters standing in fire take 1 this often (you never do)
+# spider & lash (jovi, 2026-10-01)
+@export var rope_skip_height := 0.8 ## the rope rides over anything it would clear this much higher: no bends on kerbs and low ledges
+@export var rope_skip_width := 0.4 ## and past anything it clears this far to either side: no bends on poles and twigs
+@export var spider_bite_reach := 0.6 ## the spider bites a monster this close (gap between them)
+@export var spider_bite_every := 1.2 ## seconds between the spider's own bites
+@export var spider_bite_damage := 1.0 ## its own bite (the point: a shield's front stops it)
+@export var spider_pilot_bite := 2.0 ## steering it, attack bites for this (the blade: it cracks shields)
+@export var spider_pilot_bite_time := 0.4 ## steering it, seconds between bites
+@export var spider_bite_lunge := 6.0 ## a steered bite lunges it forward this fast
+@export var spider_turn := 1.0 ## walking past a shield monster, iron knight or brute turns it like a gear: this many radians per metre over its radius
+@export var spider_turn_daze := 1.5 ## a monster the spider turned stays turned (dazed) this long
+@export var lash_leash := 7.0 ## lash a monster: it's leashed on a rope this long; at full length you drag it
+@export var sling_time := 0.7 ## attack with a monster leashed: it swings round you this long, then flies
+@export var sling_radius := 2.6 ## how far out it swings
+@export var sling_spin := 10.0 ## radians per second it swings round
+@export var sling_speed := 16.0 ## how fast it flies when let go (it bowls and splats like a heavy hit)
+@export var sling_damage := 1.0 ## what the slung monster does to everything it swings through, and takes itself
+@export var yank_speed := 18.0 ## lash again with a monster leashed: it's yanked to your feet this fast, bowling what's in the way
 
 const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", "accel", "friction", "brake", "turn_rate", "turn_rate_fast",
 	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
@@ -148,4 +166,6 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", 
 	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "crank_ratio", "screw_notch", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_lag", "cam_recenter_delay",
 	"seed_throw_speed", "seed_throw_up", "bomb_throw_keep", "bomb_friction", "bomb_bat_speed", "bomb_bat_up", "bomb_jump_speed", "pincer_window", "pincer_bonus", "knight_magnet_range",
 	"knight_pull_speed", "knight_open_time", "knight_push_knock", "knight_magnet_cd", "iron_plough_knock", "fire_spread_delay", "fire_damage_every",
+	"rope_skip_height", "rope_skip_width", "spider_bite_reach", "spider_bite_every", "spider_bite_damage", "spider_pilot_bite", "spider_pilot_bite_time",
+	"spider_bite_lunge", "spider_turn", "spider_turn_daze", "lash_leash", "sling_time", "sling_radius", "sling_spin", "sling_speed", "sling_damage", "yank_speed",
 	"pot_throw_speed", "pot_throw_run", "pot_throw_up", "pot_respawn", "honey_slow", "honey_jump", "honey_cover", "candy_heat_time", "heat_reach", "candle_heat", "swap_range", "drunk_time", "drunk_sway", "drunk_monster_time", "wet_time", "wine_burn", "lure_range", "crate_push_speed", "crate_burn"]

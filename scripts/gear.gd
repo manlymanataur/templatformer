@@ -45,8 +45,8 @@ static func cog(parent: Node, pos: Vector3, r: float, tuning: Tuning) -> Gear:
 func _ready() -> void:
 	add_to_group("gears")
 	add_to_group("cogs")
+	process_physics_priority = 50 # after the spider has stepped (0), before the rope (100) and Machinery (150)
 	_build()
-	_gear_last = global_position
 
 func _build() -> void:
 	var c := CollisionShape3D.new()
@@ -86,29 +86,20 @@ func _teeth_ring(parent: Node3D, y: float, h: float, col: Color) -> void:
 		tooth.rotation.y = -a
 		parent.add_child(tooth)
 
-var _last := {} ## spider -> where it was last frame
-var _gear_last := Vector3.ZERO ## where this gear was last frame (a gear riding a rack moves)
-
 func _physics_process(dt: float) -> void:
 	# a spider walking along the rim turns the gear by how far it walked past it, like rope sliding past.
-	# Measured from the gear, so a gear and spider riding the same rack only count the spider's own steps.
-	var moved := global_position - _gear_last
-	_gear_last = global_position
-	var seen := {}
+	# Only its own steps count (Spider.own_step): not the floor carrying it, so a gear never turns itself by what
+	# it moves (a spider riding an arm bridge or a rack), and not the gear riding past a still spider.
 	for n in get_tree().get_nodes_in_group("spiders"):
-		var sp := n as Node3D
+		var sp := n as Spider
+		if sp == null:
+			continue
 		var at := sp.global_position
-		seen[sp] = true
-		if _last.has(sp):
-			var d: Vector3 = at - _last[sp] - moved
-			d.y = 0.0
-			var off := Vector3(at.x - global_position.x, 0, at.z - global_position.z)
-			if d.length() > 0.0001 and off.length() < radius + 0.9 and absf(at.y - global_position.y - 0.6) < 1.5:
-				turn(d.length() * signf(off.cross(d).y))
-		_last[sp] = at
-	for k in _last.keys():
-		if not seen.has(k):
-			_last.erase(k)
+		var d := sp.own_step
+		d.y = 0.0
+		var off := Vector3(at.x - global_position.x, 0, at.z - global_position.z)
+		if d.length() > 0.0001 and off.length() < radius + 0.9 and absf(at.y - global_position.y - 0.6) < 1.5:
+			turn(d.length() * signf(off.cross(d).y))
 	if _jam_fx > 0.0:
 		_jam_fx -= dt
 

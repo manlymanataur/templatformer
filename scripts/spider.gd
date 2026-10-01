@@ -14,6 +14,10 @@ extends CharacterBody3D
 ## - Hook it with the lash and the lash becomes a taut rope (Tether). At full length, whichever of you is
 ##   being steered drags the other.
 ## - Context button next to it (while you're steering yourself) picks it up.
+## - It bites (jovi, 2026-10-01): on its own it nips any monster within spider_bite_reach every spider_bite_every
+##   (the point: a shield's front stops it); while you steer it, attack is a lunging bite (spider_pilot_bite,
+##   the blade: it cracks shields). Walking past a shield monster, an iron knight or a brute it turns it like a
+##   gear (spider_turn), and the monster stays turned, dazed, for spider_turn_daze: its back is open.
 
 const RADIUS := 0.175 ## the small player's size (Player.RADIUS x small_scale 0.35)
 const MASK := 1 | 1 << 4 | 1 << 5 ## the world, props (seed cubes) and spider mesh; not bars or grates
@@ -28,6 +32,15 @@ var _body: Node3D
 var held: Node3D = null ## what it's carrying overhead
 var facing := Vector3.FORWARD
 var _load: CollisionShape3D ## the carried thing's size, so a loaded spider can't squeeze through
+var own_step := Vector3.ZERO ## how far its own legs took it this frame: not what a moving floor or the rope did (gears read this)
+var _last_at := Vector3.ZERO
+var _carry_mem := {}
+var _shove := Vector3.ZERO ## how far the rope dragged it since its last step
+var _bite_cd := 0.0
+var _pilot_cd := 0.0
+var _jaw_t := 0.0 ## the bite's snap, for the look
+var bites := 0 ## bites that landed (for tests)
+var turned := 0.0 ## radians it has turned monsters by walking past them (for tests)
 
 static func deploy(p: Player) -> Spider:
 	var s := Spider.new()
@@ -108,7 +121,9 @@ func lashed() -> bool:
 	return player != null and player.leash != null and player.leash.b == self
 
 func _physics_process(dt: float) -> void:
+	own_step = Vector3.ZERO
 	if Liquids.frozen_step(self, dt): # rock candy
+		_last_at = global_position
 		return
 	_t += dt
 	var target := wish * t.spider_speed if piloted else Vector3.ZERO
@@ -121,6 +136,9 @@ func _physics_process(dt: float) -> void:
 		velocity.y -= t.gravity * dt
 	Liquids.creature_after(self) # honey holds it fast
 	move_and_slide()
+	_measure_step()
+	_turn_monsters()
+	_auto_bite(dt)
 	if global_position.y < -30.0:
 		player.stow_spider() # fell off the world: it climbs back into your pack
 		return
@@ -130,7 +148,8 @@ func _physics_process(dt: float) -> void:
 		return
 	if hv.length() > 0.3:
 		facing = hv.normalized()
-	_body.basis = Basis.looking_at(facing, Vector3.UP).scaled(Vector3.ONE * (RADIUS / 0.5))
+	_jaw_t = maxf(_jaw_t - dt, 0.0)
+	_body.basis = Basis.looking_at(facing, Vector3.UP).scaled(Vector3.ONE * (RADIUS / 0.5) * (1.0 + 0.6 * _jaw_t / 0.15))
 	if held != null and not is_instance_valid(held):
 		_drop_shape()
 	# legs: four a side, scuttling while it moves
@@ -141,6 +160,103 @@ func _physics_process(dt: float) -> void:
 		var leg := _legs[k]
 		leg.basis = Basis(Vector3.UP, side * (PI / 2.0) + a) * Basis(Vector3.RIGHT, 0.5)
 		leg.position = Vector3(side * 0.5 * 0.8, -0.1, (k % 4 - 1.5) * 0.2)
+
+## Its own walking this frame: the move less what the floor under it carried it (a rack, a swinging bridge, a
+## screw) and what the rope dragged it. Only this turns gears, so a gear never winds itself by what it moves.
+func _measure_step() -> void:
+	var carry := Machinery.carried(self, _carry_mem)
+	own_step = global_position - _last_at - carry - _shove
+	if own_step.length() > 1.0:
+		own_step = Vector3.ZERO # put somewhere (deployed, a test, thrown): not a step
+	_shove = Vector3.ZERO
+	_last_at = global_position
+
+## Monsters it can turn by walking past them: shielded ones (a shield monster, an iron knight) and brutes.
+static func turnable(m: Monster) -> bool:
+	return m.kind == "shield" or m.kind == "brute" or m is IronKnight or m is PlatedBrute
+
+func _monster_gap(m: Monster) -> float:
+	var off := Vector3(m.global_position.x - global_position.x, 0, m.global_position.z - global_position.z)
+	return off.length() - RADIUS - m._r
+
+## Walking past a shielded monster or a brute turns it, the way its legs turn a gear: by how far it walked past,
+## over the monster's radius, the way the walk goes round it. Turned, it stays turned for a moment.
+func _turn_monsters() -> void:
+	var d := Vector3(own_step.x, 0, own_step.z)
+	if d.length() < 0.0001:
+		return
+	for n in get_tree().get_nodes_in_group("monsters"):
+		var m := n as Monster
+		if m == null or m.hp <= 0 or not turnable(m) or m.air:
+			continue
+		if _monster_gap(m) > t.spider_bite_reach or absf(m.global_position.y - global_position.y) > 1.5:
+			continue
+		var off := Vector3(global_position.x - m.global_position.x, 0, global_position.z - m.global_position.z)
+		var ang := d.length() / maxf(m._r, 0.2) * t.spider_turn * signf(off.cross(d).y)
+		m.rotate_y(ang)
+		turned += absf(ang)
+		m.stun = maxf(m.stun, t.spider_turn_daze)
+		if m.state != "move":
+			m.state = "move" # turned out of its swing
+
+## Its own bite: the nearest monster within reach, every spider_bite_every.
+func _auto_bite(dt: float) -> void:
+	_bite_cd = maxf(_bite_cd - dt, 0.0)
+	_pilot_cd = maxf(_pilot_cd - dt, 0.0)
+	if _bite_cd > 0.0 or held != null:
+		return
+	var best: Monster = null
+	var best_gap := t.spider_bite_reach
+	for n in get_tree().get_nodes_in_group("monsters"):
+		var m := n as Monster
+		if m == null or m.hp <= 0 or absf(m.global_position.y - global_position.y) > 1.2:
+			continue
+		var gap := _monster_gap(m)
+		if gap <= best_gap:
+			best = m
+			best_gap = gap
+	if best == null:
+		return
+	_bite_cd = t.spider_bite_every
+	_snap(best, int(t.spider_bite_damage), "point", 1.0)
+
+## Steering it, attack: a lunging bite at what's in front (cracks a shield; turn it first for its back).
+func bite() -> void:
+	if _pilot_cd > 0.0 or held != null:
+		return
+	_pilot_cd = t.spider_pilot_bite_time
+	_jaw_t = 0.15
+	velocity += facing * t.spider_bite_lunge
+	var best: Monster = null
+	var best_gap := t.spider_bite_reach + 0.5
+	for n in get_tree().get_nodes_in_group("monsters"):
+		var m := n as Monster
+		if m == null or m.hp <= 0 or absf(m.global_position.y - global_position.y) > 1.2:
+			continue
+		var to := m.global_position - global_position
+		to.y = 0.0
+		if to.length() > 0.01 and facing.dot(to.normalized()) < 0.2:
+			continue # behind it
+		var gap := _monster_gap(m)
+		if gap <= best_gap:
+			best = m
+			best_gap = gap
+	if best != null:
+		_snap(best, int(t.spider_pilot_bite), "blade", 4.0)
+
+func _snap(m: Monster, dmg: int, head: String, knock: float) -> void:
+	_jaw_t = 0.15
+	var to := m.global_position - global_position
+	to.y = 0.0
+	if to.length() > 0.01:
+		facing = to.normalized()
+	m.strike(dmg, global_position, {"head": head, "knock": knock})
+	bites += 1
+	Hitfx.sparks(get_tree(), global_position + facing * RADIUS + Vector3.UP * 0.1, 0.4)
+
+## The rope dragged it this far (Tether._pull).
+func shoved(by: Vector3) -> void:
+	_shove += by
 
 ## The context button while you steer it: pick up what's next to it, or put down what it carries.
 func context() -> void:

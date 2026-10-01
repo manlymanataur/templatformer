@@ -140,3 +140,37 @@ static func resolve(demands: Array, tree: SceneTree) -> void:
 			continue
 		for n in members:
 			n.cog_apply(float(val[n]) * k)
+
+## How far the floor under a body carried it since the last call (a rack, a bridge, a screw, a lift: anything
+## that moves). mem is kept per body by the caller. Gears subtract this, so machinery never turns itself by
+## what it moves (jovi, 2026-10-01): a spider riding a bridge round, or a rope end carried along, isn't a driver.
+static func carried(body: Node3D, mem: Dictionary) -> Vector3:
+	var at := body.global_position
+	var out := Vector3.ZERO
+	var fl: Node3D = mem.get("floor", null)
+	if fl != null and is_instance_valid(fl) and fl.is_inside_tree():
+		var then: Transform3D = mem["xf"]
+		var was: Vector3 = mem["at"]
+		out = fl.global_transform * (then.affine_inverse() * was) - was
+	var nf := floor_of(body)
+	mem["floor"] = nf
+	mem["xf"] = nf.global_transform if nf != null else Transform3D()
+	mem["at"] = at
+	return out
+
+## What a body stands on (a slide collision below it, or the first thing a short ray down finds), or null.
+static func floor_of(body: Node3D) -> Node3D:
+	var cb := body as CharacterBody3D
+	if cb != null:
+		for i in cb.get_slide_collision_count():
+			var c := cb.get_slide_collision(i)
+			if c.get_normal().y > 0.6 and c.get_collider() is Node3D:
+				return c.get_collider() as Node3D
+	if not body.is_inside_tree():
+		return null
+	var ex: Array[RID] = []
+	if body is CollisionObject3D:
+		ex.append((body as CollisionObject3D).get_rid())
+	var q := PhysicsRayQueryParameters3D.create(body.global_position, body.global_position + Vector3.DOWN * 1.2, 1 | 1 << 4, ex)
+	var hit := body.get_world_3d().direct_space_state.intersect_ray(q)
+	return hit["collider"] as Node3D if not hit.is_empty() and hit["collider"] is Node3D else null
