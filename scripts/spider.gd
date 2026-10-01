@@ -120,6 +120,8 @@ func _physics_process(dt: float) -> void:
 	else:
 		velocity.y -= t.gravity * dt
 	Liquids.creature_after(self) # honey holds it fast
+	if is_on_floor():
+		StepUp.try(self, dt, t.step_height * RADIUS / Player.RADIUS, RADIUS) # walks over bumps its size, like you
 	move_and_slide()
 	if global_position.y < -30.0:
 		player.stow_spider() # fell off the world: it climbs back into your pack

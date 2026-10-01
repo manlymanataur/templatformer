@@ -21,7 +21,7 @@ const SPEED := 3.2
 const TOUCH := 1.1
 const GRAVITY := 30.0
 const AIR_GRAVITY := 20.0 ## launched: it hangs a little longer so you can follow it up
-const LAUNCH_UP := 10.0 ## a launcher throws it about 2.5 m up
+const LAUNCH_UP := 10.0 ## a launcher throws it this fast up unless the hit says (info lift: the poleaxe's Tuning.launch_up)
 const JUGGLE_LIFT := 8.0 ## each air hit lifts it less: 8, 6, 4, then only a spike (hammer or pound) works
 const JUGGLE_MAX := 3
 const SPIKE_SPEED := 26.0
@@ -470,12 +470,14 @@ func strike(amount: int, from: Vector3, info: Dictionary) -> int:
 			velocity = Vector3(away.x, 0, away.z) * 2.0 + Vector3.DOWN * SPIKE_SPEED
 			slammed = true
 			return dmg
-		if not air:
-			# launched: up it goes, nearly straight, for you to follow
+		if info.get("launch", false) and not info.get("air", false):
+			# launched: up it goes, nearly straight, for you to follow. A launcher from the ground catches one
+			# that's already up too (the sweep after thrust2) and throws it up again; its juggle count carries on.
+			if not air:
+				juggle = 0
 			air = true
-			juggle = 0
 			_air_t = 0.0
-			velocity = away * 1.5 + Vector3.UP * LAUNCH_UP
+			velocity = away * 1.5 + Vector3.UP * float(info.get("lift", LAUNCH_UP))
 			global_position.y += 0.05
 			stun = maxf(stun, 0.2)
 			return dmg

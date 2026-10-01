@@ -7,9 +7,11 @@ extends CharacterBody3D
 ## - Context button while carrying: set down in front of you on soil, mud or roots, it plants; anywhere else
 ##   you throw it (moving) or set it down (standing still), like a bomb.
 ## - A seed that falls spear_drop metres or more onto mud spears in and plants itself.
-## - Planted, it grows a trunk straight up (trunk_height, or to the ceiling) that you can climb and lash to,
-##   and four roots along the ground on the grid axes, each until something blocks it (root_length at most).
-##   Roots run straight out over gaps, so they bridge them.
+## - Planted, the cube sinks out of sight (no mesh, no collision: jovi wanted the base gone) and a trunk
+##   TRUNK_R wide grows from the ground straight up (trunk_height, or to the ceiling) that you can climb, stand
+##   on top of, and lash to, and four roots along the ground on the grid axes, each until something blocks it
+##   (root_length at most). Roots are ROOT_DEPTH deep, reaching down from just above the ground, and run
+##   straight out over gaps, so they bridge them.
 ## - Context button next to a planted seed pulls it back up: the trunk and roots go and the seed is in your hands.
 ##   Roots of other planted seeds that it blocked grow on into the space it freed (up to root_length).
 ## - You can climb vines and trunks with a seed in your hands. Let go of it while climbing and it drops
@@ -19,7 +21,9 @@ extends CharacterBody3D
 
 const SIZE := 2.0
 const HALF := 1.0
-const TRUNK_R := 0.4
+const TRUNK_R := 0.75 ## the trunk is 1.5 m across: room to stand on its top
+const ROOT_DEPTH := 1.2 ## roots reach this far down from their top (0.12 m above the ground)
+const ROOT_TOP := 0.12
 
 var t: Tuning
 var holder: Node3D = null ## the player or the spider carrying it (anything with radius())
@@ -157,18 +161,18 @@ func plant() -> bool:
 	planted = true
 	velocity = Vector3.ZERO
 	var base: Vector3 = hit["position"]
-	global_position = base + Vector3.UP * HALF # the cube stays as the stump; you can still stand on it
-	_col.set_deferred("disabled", false)
+	global_position = base + Vector3.UP * HALF # the seed stays here (uprooting finds it), out of sight
+	_col.set_deferred("disabled", true) # the trunk stands in its place
+	_mesh.visible = false
 	remove_from_group("targets")
 	var space := get_world_3d().direct_space_state
 	# trunk: straight up until the ceiling
 	var h := t.trunk_height
-	var up := PhysicsRayQueryParameters3D.create(base + Vector3.UP * (SIZE + 0.1), base + Vector3.UP * t.trunk_height, 1, [get_rid()])
+	var up := PhysicsRayQueryParameters3D.create(base + Vector3.UP * 0.1, base + Vector3.UP * t.trunk_height, 1, [get_rid()])
 	var roof := space.intersect_ray(up)
 	if not roof.is_empty():
 		h = (roof["position"] as Vector3).y - base.y - 0.1
-	h -= SIZE # the trunk grows from the cube's top
-	trunk = _part(base + Vector3.UP * (SIZE + h / 2.0), Vector3(TRUNK_R * 2.0, h, TRUNK_R * 2.0), true)
+	trunk = _part(base + Vector3.UP * (h / 2.0), Vector3(TRUNK_R * 2.0, h, TRUNK_R * 2.0), true)
 	Plants.mark(trunk, "wood") # climbable, a lash post
 	trunk.add_to_group("trunks")
 	trunk.set_meta("seed", self)
@@ -186,8 +190,8 @@ func _base() -> Vector3:
 ## How far a root along d can run from the stump before something (layer 1) is in the way.
 func _root_reach(d: Vector3) -> float:
 	var skip: Array[RID] = [get_rid()]
-	if trunk != null:
-		skip.append(trunk.get_rid())
+	for tr in get_tree().get_nodes_in_group("trunks"): # trunks stand where the cubes did, which roots ran past
+		skip.append((tr as CollisionObject3D).get_rid())
 	for r in roots:
 		if is_instance_valid(r):
 			skip.append(r.get_rid())
@@ -202,8 +206,8 @@ func _grow_root(d: Vector3) -> StaticBody3D:
 		return null
 	var base := _base()
 	var mid := base + d * (HALF + reach / 2.0)
-	var size := Vector3(0.8, 0.3, 0.8) + d.abs() * (reach - 0.8)
-	var root := _part(Vector3(mid.x, base.y - 0.03, mid.z), size, false)
+	var size := Vector3(0.8, ROOT_DEPTH, 0.8) + d.abs() * (reach - 0.8)
+	var root := _part(Vector3(mid.x, base.y + ROOT_TOP - ROOT_DEPTH / 2.0, mid.z), size, false)
 	root.add_to_group("roots")
 	Plants.mark(root, "wood")
 	root.set_meta("reach", reach)
@@ -281,6 +285,7 @@ func uproot(p: Node3D) -> void:
 	roots.clear()
 	_root_dirs.clear()
 	planted = false
+	_mesh.visible = true
 	add_to_group("targets")
 	hold(p)
 	# whatever this plant held back grows on once its parts are out of the world

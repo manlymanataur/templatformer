@@ -343,6 +343,7 @@ func _combat_tests() -> void:
 	await _works_tests(arena)
 	await _powers_tests()
 	await _cellar_tests()
+	await _playtest_fix_tests()
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -1335,7 +1336,7 @@ func _rootworks_tests(arena: Vector3) -> void:
 	check("locked on, the lash fetches a seed off a 4.5 m ledge %.1f m away" % Vector3(64, 11.5, 106).distance_to(m["root_c_stand"]),
 		p.held_seed != null, "holding %s" % (p.held_seed != null))
 
-	# 63. Plant it in the mud at the ledge's foot, then up the cube (2 m) and onto the 4.5 m ledge
+	# 63. Plant it in the mud at the ledge's foot, climb the trunk onto its top and drop onto the 4.5 m ledge
 	await place(Vector3(64, 6.6, 100.3))
 	p.facing = Vector3.BACK
 	await frames(2)
@@ -1344,19 +1345,14 @@ func _rootworks_tests(arena: Vector3) -> void:
 	var in_mud := p.held_seed == null
 	p.ai_move = Vector2(0, 1)
 	var top_y := 0.0
-	for i in 400:
+	for i in 500:
 		await physics_frame
 		top_y = maxf(top_y, p.global_position.y)
-		if p.is_on_floor() and not p.ai_jump:
-			p.ai_jump = true
-		elif p.ai_jump and p.velocity.y < 0.0:
-			p.ai_jump = false
 		if p.global_position.z > 105.5 and p.is_on_floor() and p.global_position.y > 10.0:
 			break # on the ledge: stop pushing before you run off its far side
 	p.ai_move = Vector2.ZERO
-	p.ai_jump = false
 	await frames(30)
-	check("planted in mud, the cube and a ledge grab get you onto the 4.5 m ledge",
+	check("planted in mud, you climb the trunk and step off its top onto the 4.5 m ledge",
 		in_mud and p.global_position.z > 104.3 and p.global_position.y > m["root_c_top"], "peak y %.1f, ended z %.1f y %.1f" % [top_y, p.global_position.z, p.global_position.y])
 
 	# 64. Dropped 3 m or more onto mud a seed spears in and plants itself; 2 m isn't enough
@@ -1587,6 +1583,10 @@ func _plants_tests(arena: Vector3) -> void:
 			climbed_with = maxf(climbed_with, p.global_position.y - y_start)
 		if p.is_on_floor() and p.global_position.y > 6.3:
 			break
+	for i in 90: # the vault sets you just past the edge: walk in far enough to set the 2 m cube down behind you
+		if p.global_position.x > 80.8:
+			break
+		await physics_frame
 	p.ai_move = Vector2.ZERO
 	await frames(40)
 	var on_shelf := p.global_position.y > 6.3 and p.held_seed != null
@@ -1595,13 +1595,9 @@ func _plants_tests(arena: Vector3) -> void:
 	p.ai_context = true # set it down on the soil: it plants
 	await frames(3)
 	var planted_up := sd != null and sd.planted
-	p.ai_move = Vector2(-1, 0) # onto the cube
-	for i in 120:
+	p.ai_move = Vector2(-1, 0) # up the trunk and onto its top (the planted cube is gone)
+	for i in 400:
 		await physics_frame
-		if p.is_on_floor() and not p.ai_jump:
-			p.ai_jump = true
-		elif p.ai_jump and p.velocity.y < 0.0:
-			p.ai_jump = false
 		if p.is_on_floor() and p.global_position.y > 8.3:
 			break
 	p.ai_jump = false
@@ -3843,3 +3839,152 @@ func _cellar_tests() -> void:
 		trap_blob.queue_free()
 	await _mop()
 	await _liquid_player(L)
+
+## jovi's playtest fixes (2026-10-01): items off the quick bar switch off, step-up over bumps, easier
+## launching, vaulting onto a trunk's top, the planted seed out of sight, bigger trees, basins that swap liquids.
+func _playtest_fix_tests() -> void:
+	var t: Tuning = level.t
+	var L := Vector3(-95, 0.6, -95) # open floor
+
+	# P1. An item moved off the quick bar switches off: the candle hat goes out, Umbra goes, the magnet stops working
+	await _liquid_player(L)
+	var inv: Inventory = p.inventory
+	for id in ["candle", "umbra", "magnet", "lash", "potion"]:
+		inv.add(id)
+	p.ai_item = 0
+	await frames(2)
+	p.ai_item = 1
+	await frames(2)
+	var were_on: bool = p.candle_lit and p.umbra != null and inv.equipped("magnet")
+	inv.assign(0, "lash") # the lash takes the candle's slot
+	await frames(2)
+	inv.assign(1, "potion") # the potion takes Umbra's
+	await frames(2)
+	inv.assign(2, "candle") # the candle back on slot 3: it stays out until you use it, and the magnet is off the bar
+	await frames(2)
+	check("items moved off the quick bar switch off (candle hat out, Umbra gone, magnet unequipped)",
+		were_on and not p.candle_lit and p.umbra == null and not inv.equipped("magnet") and inv.has("magnet"),
+		"were on %s, candle %s, umbra %s, magnet equipped %s" % [were_on, p.candle_lit, p.umbra != null, inv.equipped("magnet")])
+
+	# P2. Step-up: running into a ledge up to step_height (0.5 m) walks you onto it; 0.9 m is still a wall.
+	# Small, the step is step_height x small_scale.
+	var cases := [[0.45, false, true], [0.9, false, false], [0.15, true, true], [0.3, true, false]]
+	for c in cases:
+		var h: float = c[0]
+		var shrink: bool = c[1]
+		var should: bool = c[2]
+		await _liquid_player(L)
+		if shrink:
+			p.set_small(true, true)
+			await frames(3)
+		var step := level.box(L + Vector3(0, h / 2.0 - 0.6, -3.0), Vector3(6, h, 2.0), Basis(), Color(0.5, 0.5, 0.5)) as StaticBody3D
+		await frames(2)
+		var y0 := p.global_position.y
+		p.ai_move = Vector2(0, -1)
+		var on_top := false
+		var hi := 0.0
+		for i in 90:
+			await physics_frame
+			if absf(p.global_position.z - L.z + 3.0) < 1.0:
+				hi = maxf(hi, p.global_position.y - y0)
+			if p.global_position.z < L.z - 2.3 and p.global_position.z > L.z - 3.7 and p.is_on_floor() and p.global_position.y > y0 + h - 0.05:
+				on_top = true
+		p.ai_move = Vector2.ZERO
+		check("%s, a %.2f m ledge %s (step %.2f m)" % ["small" if shrink else "normal size", h, "is walked up without a jump" if should else "still blocks you", t.step_height * (t.small_scale if shrink else 1.0)],
+			on_top == should and not p.jumping, "on top %s, %.2f m up over it" % [on_top, hi])
+		step.queue_free()
+		if shrink:
+			p.set_small(false, true)
+		await frames(2)
+
+	# P3. Launching is easier: the combo's second hit (thrust2) launches already, launch_up throws it 3.6 m
+	await _liquid_player(L)
+	p.inventory.add("poleaxe")
+	var mon := await _dummy(p.global_position + Vector3(0, 0.1, -1.8 * Poleaxe.REACH))
+	var moves := []
+	for k in 2:
+		mon.global_position = p.global_position + Vector3(0, 0.1, -1.8 * Poleaxe.REACH)
+		mon.velocity = Vector3.ZERO
+		p.ai_attack = true
+		await frames(2)
+		moves.append(p.poleaxe.move)
+		for i in 60:
+			if mon.air or p.poleaxe.busy <= 0.0:
+				break
+			await physics_frame
+	var launched := mon.air
+	var y_from := mon.global_position.y
+	var top_y := y_from
+	for i in 60:
+		await physics_frame
+		top_y = maxf(top_y, mon.global_position.y)
+	var want_up := t.launch_up * t.launch_up / (2.0 * Monster.AIR_GRAVITY)
+	check("thrust, thrust launches (2 hits, not 3): the blob goes up %.1f m (within 0.4) (launch_up %.0f m/s)" % [want_up, t.launch_up],
+		moves == ["thrust", "thrust2"] and launched and top_y - y_from > want_up - 0.4, "moves %s, launched %s, rose %.1f m" % [moves, launched, top_y - y_from])
+	mon.queue_free()
+
+	# P4-P6. A planted seed: the cube is out of sight and out of the way, the trunk is 1.5 m wide and trunk_height
+	# (10 m) tall from the ground, and the roots reach 1.2 m down
+	await _fresh_player(L)
+	var sd := Seed.make(level, L + Vector3(0, Seed.HALF - 0.55, -6), t)
+	await frames(10)
+	var planted := sd.plant()
+	await frames(3)
+	var trunk_shape := (sd.trunk.get_child(0) as CollisionShape3D).shape as CylinderShape3D
+	var base_y := sd.global_position.y - Seed.HALF
+	var cube_col := sd.get_child(0) as CollisionShape3D
+	check("planted, the seed cube is hidden and has no collision", planted and not sd._mesh.visible and cube_col.disabled,
+		"mesh visible %s, collision off %s" % [sd._mesh.visible, cube_col.disabled])
+	check("the trunk is %.1f m wide and %.0f m tall from the ground" % [Seed.TRUNK_R * 2.0, t.trunk_height],
+		absf(trunk_shape.radius - Seed.TRUNK_R) < 0.01 and absf(sd.trunk_top() - base_y - t.trunk_height) < 0.2 and absf(sd.trunk.global_position.y - trunk_shape.height / 2.0 - base_y) < 0.05,
+		"radius %.2f, top %.1f m over the ground" % [trunk_shape.radius, sd.trunk_top() - base_y])
+	var deep := 0.0
+	for r in sd.roots:
+		var bs := ((r.get_child(0) as CollisionShape3D).shape as BoxShape3D).size
+		deep = maxf(deep, base_y - (r.global_position.y - bs.y / 2.0))
+	check("roots reach %.1f m down" % (Seed.ROOT_DEPTH - Seed.ROOT_TOP), sd.roots.size() > 0 and absf(deep - (Seed.ROOT_DEPTH - Seed.ROOT_TOP)) < 0.05, "%.2f m down" % deep)
+
+	# P7. Climbing a trunk from each side, holding the stick into it the whole way, vaults you onto its top
+	var made := 0
+	for d in [Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT]:
+		var axis := Vector3(sd.trunk.global_position.x, 0, sd.trunk.global_position.z)
+		await _liquid_player(axis + (-(d as Vector3)) * (Seed.TRUNK_R + 2.2) + Vector3(0, 0.6, 0))
+		p.ai_move = Vector2(d.x, d.z)
+		var stood := false
+		for i in 360:
+			await physics_frame
+			var off := Vector2(p.global_position.x - axis.x, p.global_position.z - axis.z).length()
+			if p.is_on_floor() and p.global_position.y > sd.trunk_top() and off < Seed.TRUNK_R:
+				stood = true
+				break
+		await frames(40) # still holding the stick the way you climbed: you stay on top
+		p.ai_move = Vector2.ZERO
+		await frames(20)
+		var off2 := Vector2(p.global_position.x - axis.x, p.global_position.z - axis.z).length()
+		if stood and p.global_position.y > sd.trunk_top() and off2 < Seed.TRUNK_R:
+			made += 1
+	check("climbing a trunk from any side vaults you onto its top and you stay there (4 of 4)", made == 4, "%d of 4" % made)
+	sd.queue_free()
+	await frames(2)
+
+	# P8. A basin full of one liquid takes another: the new liquid replaces the old (shallow pool and deep water)
+	var shallow := Basin.make(level, AABB(L + Vector3(6, -0.6, 4), Vector3(4, 0.5, 4)), L)
+	var deep_b := Basin.make(level, AABB(L + Vector3(-10, -0.6, 4), Vector3(4, 1.5, 4)), L)
+	Liquids.spill(level, "water", shallow.box.get_center() + Vector3.UP * 0.5)
+	Liquids.spill(level, "water", deep_b.box.get_center() + Vector3.UP * 0.5)
+	await frames(2)
+	var first: bool = shallow.kind == "water" and shallow.pool != null and deep_b.water != null
+	var old_pool := shallow.pool
+	var old_water := deep_b.water
+	Liquids.spill(level, "wine", shallow.box.get_center() + Vector3.UP * 0.5)
+	Liquids.spill(level, "honey", deep_b.box.get_center() + Vector3.UP * 0.5)
+	await frames(2)
+	check("a pot of wine into a water basin replaces the water, and honey replaces deep water",
+		first and shallow.kind == "wine" and is_instance_valid(shallow.pool) and shallow.pool.kind == "wine" and not is_instance_valid(old_pool)
+		and deep_b.kind == "honey" and deep_b.water == null and not is_instance_valid(old_water) and deep_b.pool != null and deep_b.pool.kind == "honey",
+		"first %s, shallow '%s', deep '%s'" % [first, shallow.kind, deep_b.kind])
+	for b in [shallow, deep_b]:
+		Basin._drain(b.pool)
+		Basin._drain(b.water)
+		b.queue_free()
+	await _mop()

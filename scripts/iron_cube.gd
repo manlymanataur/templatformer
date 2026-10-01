@@ -91,7 +91,7 @@ func _physics_process(dt: float) -> void:
 	if sunk:
 		return
 	var p := _player()
-	if p == null or not p.inventory.has("magnet") or p.small:
+	if p == null or not p.inventory.equipped("magnet") or p.small:
 		return
 	var dir := _pull_axis(p)
 	if dir == Vector3.ZERO:
