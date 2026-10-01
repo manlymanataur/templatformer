@@ -340,6 +340,7 @@ func _combat_tests() -> void:
 	await _colossus_tests()
 	await _feel_fix_tests()
 	await _poleaxe_tests()
+	await _powers_tests()
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -594,7 +595,7 @@ func _move_tests(arena: Vector3) -> void:
 	p.ai_move = Vector2.ZERO
 	await frames(60)
 	var throw_dist := Vector2(held.global_position.x - throw_from.x, held.global_position.z - throw_from.z).length()
-	check("thrown bomb lands a few metres ahead", throw_dist > 3.5 and throw_dist < 9.0, "%.1f m" % throw_dist)
+	check("thrown bomb (walking) stops 2-4.5 m ahead (shorter throw, jovi)", throw_dist > 2.0 and throw_dist < 4.5, "%.1f m" % throw_dist)
 	await frames(120) # let it go off
 	await _fresh_player(Vector3(90, 0.6, -80))
 	bp = await _pull_bomb()
@@ -717,7 +718,7 @@ func _hall_tests(arena: Vector3) -> void:
 	for g in get_nodes_in_group("flammable"):
 		if g is Burnable and g.kind == "grass" and g.burnt:
 			far += 1
-	check("grass fire spreads, melts the ice, lights the brazier, opens the gate", far == 12 and gate_a.opened, "%d of 12 patches burnt, gate open %s" % [far, gate_a.opened])
+	check("grass fire spreads, melts the ice, lights the brazier, opens the gate", far == 48 and gate_a.opened, "%d of 48 patches burnt, gate open %s" % [far, gate_a.opened])
 
 	# 39. Umbra floats over the dark chasm, mirrored, to the moon plate
 	await _fresh_player(m["hall_b"])
@@ -2855,3 +2856,299 @@ func _poleaxe_tests() -> void:
 			break
 	check("a wolf kept in front of you bites within %.1f s anyway" % (Monster.WOLF_PATIENCE + 1.5), bit_at >= 0, "bit after %.1f s" % (bit_at / 60.0))
 	wolf.queue_free()
+
+## A powers-book monster that holds still for the test: no AI, no drop.
+func _foe(kind: String, pos: Vector3, hp := 10) -> Monster:
+	var mon := PowersYard.foe(level, kind, pos)
+	mon.drop_heart = false
+	mon.home = pos
+	mon.stun = 60.0
+	await physics_frame
+	mon.max_hp = hp
+	mon.hp = hp
+	mon.state = "move"
+	return mon
+
+func _hp(mon: Monster) -> int:
+	return mon.hp if is_instance_valid(mon) else 0
+
+## Power Combat Sketchbook II in the game: the Umbra twin, Lodestone knights, ember and light, bomb flowers.
+func _powers_tests() -> void:
+	var t: Tuning = level.t
+	var m: Dictionary = level.marks
+	var dark: Vector3 = m["power_twin_room"] # deep in the roofed shade room
+	var court: Vector3 = m["power_bombs_room"] # the open bomb court, empty while the tests run
+
+	# P1. Umbra mirrors your stick, not your motion: pressed into a wall, you still steer it
+	await _fresh_player(Vector3(157.3, 0.6, -36))
+	var u := _summon_facing_north()
+	await frames(2)
+	var u0 := u.global_position
+	var p0 := p.global_position
+	p.ai_move = Vector2(1, 0) # into the east wall
+	await frames(60)
+	p.ai_move = Vector2.ZERO
+	var umoved := u0.x - u.global_position.x
+	var pmoved := p.global_position.x - p0.x
+	check("pushing into a wall, Umbra still mirrors your stick: it floats %.1f m in 1 s" % umoved,
+		pmoved < 0.5 and umoved > 5.0 and not u.lit, "you moved %.2f m, Umbra %.1f m, lit %s" % [pmoved, umoved, u.lit])
+
+	# P2. Shades in the dark: the poleaxe passes through, Umbra's greatsword cuts them
+	await _fresh_player(dark)
+	p.inventory.add("poleaxe")
+	var sh := await _foe("shade", p.global_position + Vector3(0, 0.1, -1.6), 4)
+	for k in 3:
+		p.ai_attack = true
+		await frames(45) # one thrust at a time, no combo
+	var after_you := _hp(sh)
+	u = _summon_facing_north()
+	await frames(2)
+	var swings := 0
+	for k in 3:
+		if not is_instance_valid(sh):
+			break
+		sh.global_position = u.global_position + Vector3(0, 0.1, -1.4)
+		sh.velocity = Vector3.ZERO
+		p.ai_attack = true
+		swings += 1
+		await frames(45)
+	check("in the dark a shade takes 0 from 3 poleaxe thrusts and dies to %d of Umbra's greatsword swings" % swings,
+		after_you == 4 and not is_instance_valid(sh) and swings == 2, "hp %d after your thrusts, alive after Umbra %s" % [after_you, is_instance_valid(sh)])
+
+	# P3. The candle exposes a shade: your poleaxe hurts it
+	await _fresh_player(dark)
+	p.inventory.add("poleaxe")
+	sh = await _foe("shade", p.global_position + Vector3(0, 0.1, -1.6), 4)
+	await frames(2)
+	var hidden := not (sh as Shade).exposed
+	p.set_candle(true)
+	await frames(3)
+	var shown := (sh as Shade).exposed
+	p.ai_attack = true
+	await frames(30)
+	check("candle light exposes a shade and the poleaxe hurts it", hidden and shown and _hp(sh) < 4,
+		"dark %s, exposed %s, hp %d" % [hidden, shown, _hp(sh)])
+	if is_instance_valid(sh):
+		sh.queue_free()
+
+	# P4. Pincer: you and Umbra striking the same monster together add t.pincer_bonus
+	var dealt := []
+	for with_twin in [false, true]:
+		await _fresh_player(dark + Vector3(-6, 0, 0))
+		p.inventory.add("poleaxe")
+		u = _summon_facing_north()
+		p.ai_move = Vector2(1, 0) # you go east, it goes west: an enemy fits between
+		await frames(15)
+		p.ai_move = Vector2.ZERO
+		await frames(30)
+		var ux := u.global_position
+		if not with_twin:
+			p.toggle_umbra()
+		p.facing = Vector3.LEFT # facing Umbra, so it faces you
+		var mid := (p.global_position + ux) / 2.0
+		mid.y = p.global_position.y + 0.1
+		var mon := await _foe("blob", mid, 20)
+		p.ai_attack = true
+		await frames(40)
+		dealt.append(20 - _hp(mon))
+		mon.queue_free()
+	var bonus: int = dealt[1] - dealt[0] - Umbra.SWING_DAMAGE
+	check("pincer: you and Umbra hitting one monster together add %d" % int(t.pincer_bonus), bonus == int(t.pincer_bonus),
+		"you alone %d, with Umbra %d" % [dealt[0], dealt[1]])
+
+	# P5. Iron knight: its shield stops a thrust; pulled with the magnet it slides to you, shield down
+	await _fresh_player(court)
+	p.inventory.add("poleaxe")
+	var kn := await _foe("knight", p.global_position + Vector3(0, 0.1, -1.8))
+	kn.look_at(p.global_position + Vector3(0, 0.1, 0), Vector3.UP) # shield toward you
+	p.ai_attack = true
+	await frames(40)
+	var blocked := _hp(kn) == 10
+	kn.queue_free()
+	await _fresh_player(court)
+	p.inventory.add("poleaxe")
+	p.inventory.add("magnet")
+	kn = await _foe("knight", p.global_position + Vector3(8, 0.1, 0))
+	var k0: float = (kn.global_position - p.global_position).length()
+	p.ai_target = true
+	await frames(60)
+	var k1: float = (kn.global_position - p.global_position).length()
+	var open := (kn as IronKnight).shield_down > 0.0
+	p.ai_attack = true
+	await frames(30)
+	p.ai_target = false
+	check("magnet pull: an iron knight %.0f m away is pulled %.1f m to you, shield down, and a thrust lands" % [k0, k0 - k1],
+		blocked and k0 - k1 > 5.0 and open and _hp(kn) < 10, "shield blocked first %s, ended %.1f m away, open %s, hp %d" % [blocked, k1, open, _hp(kn)])
+	kn.queue_free()
+
+	# P6. Push: the knight is blown away
+	await _fresh_player(court)
+	p.inventory.add("magnet")
+	p.magnet_push = true
+	kn = await _foe("knight", p.global_position + Vector3(3, 0.1, 0))
+	k0 = (kn.global_position - p.global_position).length()
+	p.ai_target = true
+	await frames(40)
+	p.ai_target = false
+	k1 = (kn.global_position - p.global_position).length()
+	check("magnet push blows an iron knight %.1f m away (1 damage)" % (k1 - k0), k1 - k0 > 4.0 and _hp(kn) == 9, "%.1f m to %.1f m, hp %d" % [k0, k1, _hp(kn)])
+	kn.queue_free()
+
+	# P7. A pushed iron block ploughs the monster in its way
+	await _fresh_player(court + Vector3(2, 0, -2.5))
+	p.inventory.add("magnet")
+	p.magnet_push = true
+	var cube := IronCube.make(level, Vector3(p.global_position.x + 6.0, 0, p.global_position.z))
+	var bl := await _foe("blob", cube.global_position + Vector3(2.6, 0.6, 0))
+	var b0 := bl.global_position
+	await frames(90)
+	var shoved: float = (bl.global_position - b0).x if is_instance_valid(bl) else 99.0
+	check("a pushed iron block ploughs a blob %.1f m on (1 damage, not stopped by it)" % shoved, shoved > 3.0 and _hp(bl) < 10 and cube.global_position.x > b0.x - 2.6,
+		"blob moved %.1f m, hp %d, block at x %.1f" % [shoved, _hp(bl), cube.global_position.x])
+	cube.queue_free()
+	if is_instance_valid(bl):
+		bl.queue_free()
+
+	# P8. Bombs: shorter throw, less momentum. Measured at a run, against the old numbers.
+	var dists := []
+	var saved := [t.bomb_throw_speed, t.bomb_throw_up, t.bomb_throw_keep, t.bomb_friction]
+	for old in [true, false]:
+		if old:
+			t.bomb_throw_speed = 7.0
+			t.bomb_throw_up = 5.0
+			t.bomb_throw_keep = 0.3
+			t.bomb_friction = 20.0
+		else:
+			t.bomb_throw_speed = saved[0]
+			t.bomb_throw_up = saved[1]
+			t.bomb_throw_keep = saved[2]
+			t.bomb_friction = saved[3]
+		await _fresh_player(Vector3(122.5, 0.6, 40))
+		var bf := await _pull_bomb()
+		bf.queue_free()
+		var held := p.carrying
+		p.ai_move = Vector2(0, -1) # the way you face
+		await frames(50) # at top speed
+		var from := p.global_position
+		p.ai_context = true
+		await frames(2)
+		p.ai_move = Vector2.ZERO
+		await frames(70)
+		dists.append(Vector2(held.global_position.x - from.x, held.global_position.z - from.z).length())
+		await frames(90)
+	check("a bomb thrown at a run stops %.1f m ahead (was %.1f m)" % [dists[1], dists[0]], dists[1] < 6.0 and dists[1] < dists[0] * 0.7,
+		"old %.1f m, now %.1f m" % [dists[0], dists[1]])
+
+	# P9. Bat a bomb with the poleaxe: it flies and goes off on the first monster it hits
+	await _fresh_player(court)
+	p.inventory.add("poleaxe")
+	var bomb := Bomb.new()
+	level.add_child(bomb)
+	bomb.set_down(p.global_position + Vector3(0, -0.2, -1.6))
+	var target := await _foe("blob", p.global_position + Vector3(0, 0.1, -8.0)) # out of the doubled poleaxe's reach (6.5 m)
+	await frames(3)
+	var bomb_at := bomb.global_position
+	p.ai_attack = true
+	var top_speed := 0.0
+	var gone_at := -1.0
+	var flew := 0.0
+	for i in 90:
+		await physics_frame
+		if not is_instance_valid(bomb) or bomb._exploded:
+			gone_at = i / 60.0
+			break
+		flew = (bomb.global_position - bomb_at).length()
+		top_speed = maxf(top_speed, Vector2(bomb.velocity.x, bomb.velocity.z).length())
+	check("a thrust bats a bomb at %.0f m/s and it goes off on the blob %.1f m on, before its fuse" % [top_speed, flew],
+		top_speed > t.bomb_bat_speed - 1.0 and gone_at > 0.0 and _hp(target) < 10, "flew at %.1f m/s, went off after %.2f s, blob hp %d" % [top_speed, gone_at, _hp(target)])
+	await frames(20)
+	if is_instance_valid(target):
+		target.queue_free()
+
+	# P10. Bomb jump: pound onto a bomb and it throws you up, unhurt
+	await _fresh_player(court)
+	bomb = Bomb.new()
+	level.add_child(bomb)
+	bomb.set_down(p.global_position + Vector3(0, -0.2, 0))
+	var ground := p.global_position.y
+	p.ai_jump = true
+	await frames(10)
+	p.ai_jump = false
+	p.ai_attack = true # in the air, no lock-on: ground pound
+	var peak := ground
+	var launched := false
+	for i in 120:
+		await physics_frame
+		peak = maxf(peak, p.global_position.y)
+		launched = launched or p.velocity.y > t.bomb_jump_speed - 2.0
+	check("bomb jump: pounding onto a bomb throws you %.1f m up, unhurt" % (peak - ground), launched and peak - ground > 5.5 and p.hp == p.max_hp,
+		"peak %.1f m, hp %d" % [peak - ground, p.hp])
+	await frames(30)
+
+	# P11. A plated brute: only blasts crack its plates
+	await _fresh_player(court)
+	p.inventory.add("poleaxe")
+	var brute := await _foe("plated", p.global_position + Vector3(0, 0.1, -1.8), 12)
+	var spot := brute.global_position
+	p.ai_attack = true
+	await frames(45)
+	var clank := _hp(brute) == 12
+	var plates := [(brute as PlatedBrute).plates]
+	for k in 2:
+		brute.global_position = spot
+		brute.velocity = Vector3.ZERO
+		var b := Bomb.new()
+		level.add_child(b)
+		b.global_position = spot + Vector3(0, 0, -2.4) # past it, out of your reach
+		await physics_frame
+		b.explode()
+		await frames(30)
+		plates.append((brute as PlatedBrute).plates)
+	brute.global_position = spot
+	brute.velocity = Vector3.ZERO
+	var before := _hp(brute)
+	p.ai_attack = true
+	await frames(45)
+	check("plated brute: the poleaxe clanks off, each blast cracks a plate, then the poleaxe hurts it",
+		clank and plates == [2, 1, 0] and _hp(brute) < before and p.hp == p.max_hp, "clank %s, plates %s, hp %d -> %d" % [clank, plates, before, _hp(brute)])
+	if is_instance_valid(brute):
+		brute.queue_free()
+
+	# P12. Fire walks across 1 m grass patches: one catches its neighbour after t.fire_spread_delay
+	await _fresh_player(court)
+	var row := Burnable.field(level, Vector3(court.x + 4, 0, court.z + 4), 8, 1)
+	await physics_frame
+	row[0].ignite()
+	var next_at := -1.0
+	var last_at := -1.0
+	for i in 600:
+		await physics_frame
+		if next_at < 0.0 and row[1].burning:
+			next_at = (i + 1) / 60.0
+		if row[7].burning or row[7].burnt:
+			last_at = (i + 1) / 60.0
+			break
+	check("a burning 1 m grass patch lights its neighbour in %.2f s; an 8 m row burns end to end in %.1f s" % [next_at, last_at],
+		next_at >= t.fire_spread_delay and next_at < t.fire_spread_delay + 0.3 and last_at > 3.0, "neighbour %.2f s, row %.1f s" % [next_at, last_at])
+	for g in row:
+		g.queue_free()
+
+	# P13. Your fire attack lights the grass you stand in: it burns a monster in it, never you
+	await _fresh_player(court)
+	p.inventory.add("poleaxe")
+	var lawn := Burnable.field(level, Vector3(court.x - 3, 0, court.z - 6), 6, 8)
+	var burner := await _foe("blob", p.global_position + Vector3(0, 0.1, -4))
+	p.set_candle(true)
+	p.ai_attack = true
+	await frames(240)
+	var burnt := 0
+	for g in lawn:
+		if g.burning or g.burnt:
+			burnt += 1
+	check("fighting in your own fire: %d of 48 patches burn, a blob in them takes %d, you take 0" % [burnt, 10 - _hp(burner)],
+		burnt > 30 and _hp(burner) < 10 and p.hp == p.max_hp, "burnt %d, blob hp %d, your hp %d" % [burnt, _hp(burner), p.hp])
+	for g in lawn:
+		g.queue_free()
+	if is_instance_valid(burner):
+		burner.queue_free()
+	await _fresh_player(court)
