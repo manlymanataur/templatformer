@@ -9,6 +9,9 @@ extends CharacterBody3D
 ## even if it falls back into shadow.
 ## It carries a greatsword and copies each of your poleaxe moves (mirrored) while it's in the dark.
 ## Lit, it's too limp to swing. If it drops into a chasm it fades, and you can call it again.
+## Powers book: shades (Shade) are only hurt by its greatsword while they're in the dark, and you and it hitting
+## the same monster together is a pincer (pincer()). It mirrors your stick (last_wish), so pinned against a wall
+## you still steer it, and your own body never blocks it.
 
 var player: Player
 var t: Tuning
@@ -48,7 +51,29 @@ static func summon(p: Player) -> Umbra:
 	u.global_position = at
 	u.home_y = u.global_position.y
 	p.poleaxe.move_started.connect(u.copy_attack)
+	u.add_collision_exception_with(p) # your body never stops it: it follows your stick, not your motion
 	return u
+
+## Pincer (powers book): you and the twin hitting the same monster within t.pincer_window adds t.pincer_bonus.
+## Monster.strike calls this with each hit's info: your poleaxe hits carry a "head", the greatsword "twin".
+static func pincer(m: Node, info: Dictionary) -> int:
+	var twin: bool = info.get("twin", false)
+	if not twin and not info.has("head"):
+		return 0 # bombs, fire, the lash: not a pincer
+	var ps := m.get_tree().get_nodes_in_group("player")
+	if ps.is_empty():
+		return 0
+	var tn: Tuning = (ps[0] as Player).t
+	var now := Engine.get_physics_frames()
+	m.set_meta("twin_f" if twin else "you_f", now)
+	var other: int = m.get_meta("you_f" if twin else "twin_f", -100000)
+	var last: int = m.get_meta("pincer_f", -100000)
+	var window := int(tn.pincer_window * Engine.physics_ticks_per_second)
+	if now - other <= window and now - last > window:
+		m.set_meta("pincer_f", now)
+		Hitfx.sparks(m.get_tree(), (m as Node3D).global_position, 1.5)
+		return int(tn.pincer_bonus)
+	return 0
 
 func _ready() -> void:
 	collision_layer = 1 << 3 # only moon plates notice it; it doesn't block you or the light
@@ -163,7 +188,10 @@ func _swing(dt: float) -> void:
 		var c = r["collider"]
 		if c != null and c != player and c.is_in_group("hurtable") and not _hit.has(c):
 			_hit.append(c)
-			c.hurt(SWING_DAMAGE, global_position)
+			if c is Monster:
+				(c as Monster).strike(SWING_DAMAGE, global_position, {"twin": true, "knock": 6.0}) # shades feel only this blade
+			else:
+				c.hurt(SWING_DAMAGE, global_position)
 
 ## Your movement, mirrored across the mirror axis.
 func mirrored(v: Vector3) -> Vector3:

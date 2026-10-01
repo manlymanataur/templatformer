@@ -212,7 +212,7 @@ func ridden() -> bool:
 	var p: Player = lv.player
 	if p == null or felled:
 		return false
-	if p.climbing is AnimatableBody3D and fur.has(p.climbing):
+	if is_instance_valid(p.climbing) and p.climbing is AnimatableBody3D and fur.has(p.climbing):
 		return true
 	if not p.is_on_floor():
 		return false

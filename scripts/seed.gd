@@ -11,16 +11,23 @@ extends CharacterBody3D
 ##   and four roots along the ground on the grid axes, each until something blocks it (root_length at most).
 ##   Roots run straight out over gaps, so they bridge them.
 ## - Context button next to a planted seed pulls it back up: the trunk and roots go and the seed is in your hands.
+##   Roots of other planted seeds that it blocked grow on into the space it freed (up to root_length).
+## - You can climb vines and trunks with a seed in your hands. Let go of it while climbing and it drops
+##   behind you: from spear_drop or higher onto mud it spears in.
+## - It's carryable (group "carryable": hold, set_down, throw), so the clockwork spider can carry it too.
+## - The trunk and roots are wood (Plants): climbable and lash posts.
 
 const SIZE := 2.0
 const HALF := 1.0
 const TRUNK_R := 0.4
 
 var t: Tuning
-var holder: Player = null
+var holder: Node3D = null ## the player or the spider carrying it (anything with radius())
 var planted := false
 var trunk: StaticBody3D = null
 var roots: Array[StaticBody3D] = []
+var _root_dirs: Array[Vector3] = [] ## roots[k] grows along _root_dirs[k]
+var _regrow_in := -1 ## frames until the roots try to grow on (after a neighbour is uprooted)
 var _peak := 0.0 ## highest point since it last rested, to measure a fall
 var _col: CollisionShape3D
 var _mesh: MeshInstance3D
@@ -37,6 +44,7 @@ static func make(parent: Node, pos: Vector3, tuning: Tuning) -> Seed:
 func _ready() -> void:
 	add_to_group("seeds")
 	add_to_group("targets")
+	add_to_group("carryable")
 	collision_layer = 1 << 4
 	collision_mask = 1
 	collision_mask = 1 | 1 << 1 | 1 << 2 | 1 << 4
@@ -73,7 +81,13 @@ func loose() -> bool:
 
 func _physics_process(dt: float) -> void:
 	if planted:
+		if _regrow_in >= 0:
+			_regrow_in -= 1
+			if _regrow_in < 0:
+				regrow_roots()
 		return
+	if holder != null and not is_instance_valid(holder):
+		throw(Vector3.ZERO) # whoever carried it is gone: it drops
 	if holder != null:
 		global_position = holder.global_position + Vector3.UP * (holder.radius() + HALF + 0.1)
 		velocity = Vector3.ZERO
@@ -109,8 +123,12 @@ func _ground_kind() -> String:
 func can_plant() -> bool:
 	return _ground_kind() != ""
 
-## Pick it up (or have the lash put it in your hands).
-func hold(p: Player) -> void:
+## How big it is to carry (the spider's load shape).
+func carry_size() -> Vector3:
+	return Vector3.ONE * SIZE
+
+## Pick it up (or have the lash put it in your hands). p is the player or the spider.
+func hold(p: Node3D) -> void:
 	holder = p
 	velocity = Vector3.ZERO
 	remove_from_group("targets")
@@ -151,26 +169,74 @@ func plant() -> bool:
 		h = (roof["position"] as Vector3).y - base.y - 0.1
 	h -= SIZE # the trunk grows from the cube's top
 	trunk = _part(base + Vector3.UP * (SIZE + h / 2.0), Vector3(TRUNK_R * 2.0, h, TRUNK_R * 2.0), true)
-	trunk.add_to_group("climbable")
-	trunk.add_to_group("lash_posts")
+	Plants.mark(trunk, "wood") # climbable, a lash post
 	trunk.add_to_group("trunks")
 	trunk.set_meta("seed", self)
 	# roots: out along each axis at ground level until something is in the way
-	var skip: Array[RID] = [get_rid(), trunk.get_rid()]
 	for d in [Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT]:
-		var from := base + Vector3.UP * 0.06 + (d as Vector3) * HALF
-		var rq := PhysicsRayQueryParameters3D.create(from, from + (d as Vector3) * t.root_length, 1, skip)
-		var r := space.intersect_ray(rq)
-		var reach := t.root_length if r.is_empty() else from.distance_to(r["position"])
-		if reach < 0.3:
-			continue
-		var mid := from + (d as Vector3) * reach / 2.0
-		var size := Vector3(0.8, 0.3, 0.8) + (d as Vector3).abs() * (reach - 0.8)
-		var root := _part(Vector3(mid.x, base.y - 0.03, mid.z), size, false)
-		root.add_to_group("roots")
-		roots.append(root)
-		skip.append(root.get_rid())
+		var root := _grow_root(d)
+		if root != null:
+			roots.append(root)
+			_root_dirs.append(d)
 	return true
+
+func _base() -> Vector3:
+	return global_position + Vector3.DOWN * HALF
+
+## How far a root along d can run from the stump before something (layer 1) is in the way.
+func _root_reach(d: Vector3) -> float:
+	var skip: Array[RID] = [get_rid()]
+	if trunk != null:
+		skip.append(trunk.get_rid())
+	for r in roots:
+		if is_instance_valid(r):
+			skip.append(r.get_rid())
+	var from := _base() + Vector3.UP * 0.06 + d * HALF
+	var rq := PhysicsRayQueryParameters3D.create(from, from + d * t.root_length, 1, skip)
+	var r := get_world_3d().direct_space_state.intersect_ray(rq)
+	return t.root_length if r.is_empty() else from.distance_to(r["position"])
+
+func _grow_root(d: Vector3) -> StaticBody3D:
+	var reach := _root_reach(d)
+	if reach < 0.3:
+		return null
+	var base := _base()
+	var mid := base + d * (HALF + reach / 2.0)
+	var size := Vector3(0.8, 0.3, 0.8) + d.abs() * (reach - 0.8)
+	var root := _part(Vector3(mid.x, base.y - 0.03, mid.z), size, false)
+	root.add_to_group("roots")
+	Plants.mark(root, "wood")
+	root.set_meta("reach", reach)
+	return root
+
+## How far the root along d reaches from the stump's side (0 if there's none).
+func root_reach(d: Vector3) -> float:
+	for k in roots.size():
+		if _root_dirs[k].is_equal_approx(d) and is_instance_valid(roots[k]):
+			return roots[k].get_meta("reach")
+	return 0.0
+
+## Roots that stopped short grow on into whatever space has opened up, to root_length at most.
+## (Called a couple of frames after another plant is uprooted, once its parts have left the world.)
+func regrow_roots() -> void:
+	if not planted:
+		return
+	for d in [Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT]:
+		var had := root_reach(d)
+		if had >= t.root_length - 0.01 or _root_reach(d) < maxf(had, 0.3) + 0.05:
+			continue
+		var k := -1
+		for i in roots.size():
+			if _root_dirs[i].is_equal_approx(d):
+				k = i
+		if k >= 0:
+			roots[k].free() # out of the world now, so it doesn't block its own regrowth
+			roots.remove_at(k)
+			_root_dirs.remove_at(k)
+		var root := _grow_root(d)
+		if root != null:
+			roots.append(root)
+			_root_dirs.append(d)
 
 func _part(pos: Vector3, size: Vector3, round_: bool) -> StaticBody3D:
 	var b := StaticBody3D.new()
@@ -206,16 +272,21 @@ func trunk_top() -> float:
 	return trunk.global_position.y + s.height / 2.0
 
 ## Pull it back up: the trunk and roots go, and the seed goes into p's hands.
-func uproot(p: Player) -> void:
+func uproot(p: Node3D) -> void:
 	if trunk != null:
 		trunk.queue_free()
 		trunk = null
 	for r in roots:
 		r.queue_free()
 	roots.clear()
+	_root_dirs.clear()
 	planted = false
 	add_to_group("targets")
 	hold(p)
+	# whatever this plant held back grows on once its parts are out of the world
+	for n in get_tree().get_nodes_in_group("seeds"):
+		if n != self and (n as Seed).planted:
+			(n as Seed)._regrow_in = 2
 
 func _exit_tree() -> void:
 	if trunk != null and is_instance_valid(trunk):

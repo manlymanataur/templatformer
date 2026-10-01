@@ -87,8 +87,11 @@ static func under(b: Node3D) -> String:
 			continue
 		if pd.kind == "water" and pd.permanent:
 			_wading = true
-		if pd.kind == "honey" or (pd.kind == "wine" and found != "honey") or found == "":
-			found = pd.kind
+		var k := pd.kind
+		if k == "wine" and pd.wet > 0.0:
+			k = "water" # doused wine is watered down: it no longer makes you drunk
+		if k == "honey" or (k == "wine" and found != "honey") or found == "":
+			found = k
 	for n in b.get_tree().get_nodes_in_group("water"):
 		if (n as Water).holds(b.global_position):
 			_wading = true
@@ -347,7 +350,7 @@ static func player_wish(p: Player, wish: Vector3, dt: float) -> Vector3:
 	var c := Coat.on(p)
 	if c == null or c.drunk <= 0.0 or wish.length() < 0.05:
 		return wish
-	var k := Time.get_ticks_msec() / 1000.0
+	var k := c.drunk # its own clock, so the sway is the same every run
 	var a := p.t.drunk_sway * (sin(k * 2.1) + 0.55 * sin(k * 5.3))
 	return wish.rotated(Vector3.UP, a)
 
@@ -372,10 +375,12 @@ static func monster_think(m: Monster, dt: float, p: Player) -> bool:
 	var t := tuning(m.get_tree())
 	var c := Coat.on(m)
 	if c != null and c.drunk > 0.0:
-		var ph := float(m.get_instance_id() % 628) / 100.0
-		var a: float = m.get_meta("wobble", ph)
-		a += (sin(m._t * 2.3 + ph) * 2.5 + sin(m._t * 0.7 + ph * 2.0) * 1.5) * dt
-		m.set_meta("wobble", a)
+		# a heading that turns slowly round while it lurches up to 2 rad either side of it: it reels well off
+		# any narrow path. The phase comes from where it spawned, so a run plays the same every time.
+		var ph := fposmod(m.home.x * 1.7 + m.home.z * 0.9, TAU)
+		var base: float = m.get_meta("wobble", ph) + 0.6 * dt
+		m.set_meta("wobble", base)
+		var a := base + 2.0 * sin(m._t * 1.3 + ph)
 		var d := Vector3(cos(a), 0, sin(a))
 		m.velocity.x = d.x * DRUNK_SPEED
 		m.velocity.z = d.z * DRUNK_SPEED

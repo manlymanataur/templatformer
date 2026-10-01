@@ -1,7 +1,8 @@
 class_name MovesYard
 extends RefCounted
 ## The moves yard, south of the start (x -26..26, z -64..-118): one station per new move.
-## Climb tower: a vine face you can climb as high as it goes (8 m), then pull yourself over the top.
+## Climb tower: a vine face you can climb as high as it goes (8 m), then pull yourself over the top. Burn it
+##   and it grows back in 20 s.
 ## Rail: from the tower top a rail runs 4 m downhill. Grinding it builds speed, and the kicker at its end throws
 ##   you across a 10 m gap to a 2 m platform.
 ## Pogo spikes: spiked balls hurt to touch, but a locked-on air attack homes in and bounces you off them. Two of them
@@ -9,7 +10,6 @@ extends RefCounted
 ## Ledge: a 3.5 m block, over a single jump (2.4 m). Catch the edge as you fall against it and pull yourself up.
 
 const STONE := Color(0.6, 0.58, 0.52)
-const VINE := Color(0.25, 0.55, 0.25)
 
 static func build(lv: Node3D) -> void:
 	var marks: Dictionary = lv.marks
@@ -20,8 +20,8 @@ static func build(lv: Node3D) -> void:
 
 	# climb tower, vines on its north face
 	rect.call(-24, -16, -76, -68, 0, 8, STONE)
-	var vine: StaticBody3D = rect.call(-23, -17, -68, -67.7, 0, 8, VINE)
-	vine.add_to_group("climbable")
+	# a Burnable vine like every other (Plants): climbable, a lash post, and it burns, but it grows back here
+	Burnable.make(lv, "vines", Vector3(-20, 0, -67.85), Vector3(6, 8, 0.3), 20.0)
 	lv.label(Vector3(-20, 3, -66), "push into vines to climb", 32)
 	marks["moves_climb"] = Vector3(-20, 0.6, -64)
 	marks["moves_climb_top"] = 8.0

@@ -89,6 +89,10 @@ func fill(k: String) -> void:
 func _holder_r() -> float:
 	return holder.radius() if holder.has_method("radius") else 0.5
 
+## Its box for carriers (the spider) that need one.
+func carry_size() -> Vector3:
+	return Vector3.ONE * R * 2.0
+
 ## Pick it up (a player, or anything else that carries).
 func hold(h: Node3D) -> void:
 	holder = h

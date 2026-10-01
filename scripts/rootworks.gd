@@ -7,21 +7,29 @@ extends RefCounted
 ## Lash ledge (north-west): a seed sits on a 4.5 m ledge. Lock on to it and lash it down, plant it in the mud
 ##   at the ledge's foot, and climb the trunk to the heart on top. (Drop a seed 3 m onto mud and it plants itself.)
 ## Lash post (north-west): a second 14 m chasm with a post on the far side. Lock on and lash it to be pulled across.
-## Gear room (on the ground, west): the gear that lifts the gate to the nook sits in a cage of bars. Neither
-##   you nor the spider can reach it, but the rope passes between bars. Lash the spider, steer it round the
-##   cage so the rope wraps the gear, and keep going: every metre of rope that slides past turns it. The gear
-##   keeps its angle when you unhook, so it can be wound over trips.
+## Gear room (on the ground, west): the gear that lifts the gate to the nook sits in a cage of bars hung with
+##   a fine mesh (layer 6). Neither you nor the spider can get in, but the rope passes through. Lash the spider,
+##   steer it round the cage so the rope wraps the gear, and keep going: every metre of rope that slides past
+##   turns it. The gear keeps its angle when you unhook, so it can be wound over trips.
+## Spider cage (plateau A, north-east corner): a seed behind a grate, with soil at the chasm's edge. Only the
+##   small spider slips through the grate. Steer it in, context picks the seed up, context again sets it down
+##   on the soil and it plants: its root is a second bridge across the chasm.
+## Vine shelf (on the ground, east of the ramp): a 6 m vine wall over mud. Climb it holding the seed from its
+##   foot and plant it on the soil up top: the cube and a ledge grab reach the heart on the 4.5 m pillar. Let go
+##   of the seed 3 m or more up the vine and it drops behind you and spears into the mud.
 
 const H := 6.0 ## floor height
 const STONE := Color(0.55, 0.5, 0.42)
 const SOIL := Color(0.4, 0.28, 0.16)
 const MUD := Color(0.3, 0.24, 0.18)
+const MESH_LAYER := 1 << 5 ## layer 6: fine mesh that stops only the spider (Spider.MASK)
 
 static func build(lv: Node3D) -> void:
 	var marks: Dictionary = lv.marks
 	var t: Tuning = lv.t
 	var rect := func(x0: float, x1: float, z0: float, z1: float, y0: float, y1: float, c: Color) -> StaticBody3D:
 		return lv.box(Vector3((x0 + x1) / 2.0, (y0 + y1) / 2.0, (z0 + z1) / 2.0), Vector3(x1 - x0, y1 - y0, z1 - z0), Basis(), c)
+	_build_vine_shelf(lv, rect)
 
 	lv.label(Vector3(68, 4, 36), "Rootworks")
 	Pickup.spawn(lv, "lash", 1, Vector3(64, 0.8, 36))
@@ -37,7 +45,9 @@ static func build(lv: Node3D) -> void:
 
 	# Root bridge: plateau A with a soil strip at its north edge, a 14 m chasm, plateau B1
 	rect.call(60, 66, 64, 76, 0, H, STONE)
-	rect.call(70, 76, 64, 76, 0, H, STONE)
+	rect.call(70, 76, 64, 74, 0, H, STONE)
+	rect.call(70, 72, 74, 76, 0, H, STONE)
+	_build_spider_cage(lv)
 	rect.call(66, 70, 64, 74, 0, H, STONE)
 	var soil: StaticBody3D = rect.call(66, 70, 74, 76, 0, H, SOIL)
 	soil.add_to_group("soil")
@@ -109,8 +119,30 @@ static func build(lv: Node3D) -> void:
 		bar.add_child(bmi)
 		bar.position = gc + o + Vector3.UP * 1.5
 		lv.add_child(bar)
+	for side in 4: # the fine mesh between the bars, so the small spider can't walk in either
+		var pa := side * PI / 2.0
+		var panel := MeshInstance3D.new()
+		var pm := BoxMesh.new()
+		pm.size = Vector3(5.0, 3.0, 0.02)
+		panel.mesh = pm
+		var mm := StandardMaterial3D.new()
+		mm.albedo_color = Color(0.6, 0.6, 0.65, 0.25)
+		mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		panel.material_override = mm
+		var mesh_body := StaticBody3D.new()
+		mesh_body.collision_layer = MESH_LAYER
+		mesh_body.collision_mask = 0
+		var mc := CollisionShape3D.new()
+		var ms := BoxShape3D.new()
+		ms.size = pm.size
+		mc.shape = ms
+		mesh_body.add_child(mc)
+		mesh_body.add_child(panel)
+		mesh_body.rotation.y = pa
+		mesh_body.position = gc + Vector3(sin(pa), 0, cos(pa)) * 2.5 + Vector3.UP * 1.5
+		lv.add_child(mesh_body)
 	var lid := StaticBody3D.new() # a lid so you can't hop in
-	lid.collision_layer = 1 << 1
+	lid.collision_layer = 1 << 1 | MESH_LAYER
 	var rc := CollisionShape3D.new()
 	var rs := BoxShape3D.new()
 	rs.size = Vector3(5.2, 0.2, 5.2)
@@ -130,3 +162,34 @@ static func build(lv: Node3D) -> void:
 	marks["root_gear_stand"] = Vector3(44, 0.6, 66)
 	marks["root_gate"] = gate
 	marks["root_gear"] = gear
+
+## Plateau A's north-east corner: a grate cage (x 72..76, z 70..76) round a seed, with soil at the chasm's edge.
+static func _build_spider_cage(lv: Node3D) -> void:
+	var marks: Dictionary = lv.marks
+	var soil: StaticBody3D = lv.box(Vector3(74, H / 2.0, 75), Vector3(4, H, 2), Basis(), SOIL)
+	soil.add_to_group("soil")
+	Grate.make(lv, Vector3(72, H, 73), Vector3(0.2, 2.6, 6.2))
+	Grate.make(lv, Vector3(74, H, 70), Vector3(4.2, 2.6, 0.2))
+	Grate.make(lv, Vector3(74, H + 2.6, 73), Vector3(4.2, 0.2, 6.2))
+	Seed.make(lv, Vector3(74.5, H + Seed.HALF, 71.6), lv.t)
+	lv.label(Vector3(70.5, H + 3.2, 70), "send the spider through the grate: context carries the seed to the soil", 32)
+	marks["root_cage_stand"] = Vector3(70.5, H + 0.6, 73)
+	marks["root_cage_seed"] = Vector3(74.5, H + Seed.HALF, 71.6)
+
+## East of the ramp: a 6 m shelf of soil and stone with vines up its west face, mud at their foot, a 4.5 m
+## pillar on top with a heart, and a seed by the mud.
+static func _build_vine_shelf(lv: Node3D, rect: Callable) -> void:
+	var marks: Dictionary = lv.marks
+	var mud: StaticBody3D = rect.call(74, 78, 54, 60, 0, 0.1, MUD)
+	mud.add_to_group("mud")
+	var soil: StaticBody3D = rect.call(78, 82, 54, 60, 0, H, SOIL)
+	soil.add_to_group("soil")
+	rect.call(82, 86, 54, 60, 0, H, STONE)
+	rect.call(82, 86, 56, 60, H, H + 4.5, STONE)
+	Burnable.make(lv, "vines", Vector3(77.85, 0.1, 57), Vector3(0.3, H - 0.1, 4))
+	Seed.make(lv, Vector3(71.5, Seed.HALF + 0.05, 57), lv.t)
+	Pickup.spawn(lv, "heart", 1, Vector3(84, H + 5.3, 58))
+	lv.label(Vector3(76, 4.0, 52.5), "climb the vines holding the seed; let go up there and it spears into the mud", 32)
+	marks["root_vine"] = Vector3(76.6, 0.7, 57)
+	marks["root_vine_seed"] = Vector3(71.5, Seed.HALF + 0.05, 57)
+	marks["root_vine_top"] = H

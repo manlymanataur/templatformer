@@ -448,7 +448,7 @@ func strike(amount: int, from: Vector3, info: Dictionary) -> int:
 				velocity = away * 2.0
 				Hitfx.sparks(get_tree(), global_position - away * 0.7, 0.6) # the point glances off
 				return 0
-	var dmg := amount
+	var dmg := amount + Umbra.pincer(self, info) # you and Umbra together: a pincer
 	var stagger: bool = info.get("stagger", false) or open_t > 0.0 or head == "hammer"
 	if state == "windup":
 		dmg = ceili(dmg * 1.5) # counter: hit it as it winds up and the attack never comes
