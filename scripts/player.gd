@@ -448,7 +448,7 @@ func release_seed() -> void:
 			return
 	if moving:
 		sd.set_down(global_position + Vector3.UP * (radius() + Seed.HALF + 0.1))
-		sd.throw(f * t.bomb_throw_speed + Vector3.UP * t.bomb_throw_up + Vector3(velocity.x, 0, velocity.z) * 0.3)
+		sd.throw(f * t.seed_throw_speed + Vector3.UP * t.seed_throw_up + Vector3(velocity.x, 0, velocity.z) * 0.3)
 
 func _room_for_cube(at: Vector3) -> bool:
 	var q := PhysicsShapeQueryParameters3D.new()
@@ -593,7 +593,7 @@ func release_bomb() -> void:
 	var f := _flat_facing()
 	var moving := _wish().length() > 0.2 or flat_speed() > 2.0
 	if moving:
-		carrying.throw(f * t.bomb_throw_speed + Vector3.UP * t.bomb_throw_up + Vector3(velocity.x, 0, velocity.z) * 0.3)
+		carrying.throw(f * t.bomb_throw_speed + Vector3.UP * t.bomb_throw_up + Vector3(velocity.x, 0, velocity.z) * t.bomb_throw_keep)
 	else:
 		carrying.set_down(global_position + f * 1.0 + Vector3.DOWN * 0.2)
 	carrying = null

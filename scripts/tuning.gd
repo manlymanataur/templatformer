@@ -51,8 +51,8 @@ extends Resource
 @export var focus_near := 3.0 ## locked on this far from a monster (or further) builds focus
 @export var focus_far := 5.5 ## ...up to this far
 @export var focus_rate := 0.45 ## focus per second (full at 1)
-@export var bomb_throw_speed := 7.0
-@export var bomb_throw_up := 5.0
+@export var bomb_throw_speed := 5.0 ## forward speed of a thrown bomb (jovi: shorter throws than the old 7)
+@export var bomb_throw_up := 4.5
 @export var dodge_tap_time := 0.2 ## a stick tap shorter than this rolls (or dodges, locked on)
 @export var candle_range := 12.0 ## how far the candle hat lights
 @export var candle_touch := 0.9 ## how close (from your centre) the candle sets things alight
@@ -101,9 +101,28 @@ extends Resource
 @export var cam_distance := 7.0
 @export var cam_lag := 10.0
 @export var cam_recenter_delay := 0.8
+# powers combat (Power Combat Sketchbook II, jovi 2026-10-01)
+@export var seed_throw_speed := 7.0 ## a thrown seed cube keeps the old bomb throw (bombs got shorter)
+@export var seed_throw_up := 5.0
+@export var bomb_throw_keep := 0.15 ## a thrown bomb keeps this share of your running speed (was 0.3)
+@export var bomb_friction := 45.0 ## a bomb on the ground slows by this (m/s per s): it stops near where it lands
+@export var bomb_bat_speed := 14.0 ## an attack that reaches a bomb on the ground bats it away this fast
+@export var bomb_jump_speed := 20.0 ## pound onto a bomb: it goes off under you and throws you up this fast, unhurt
+@export var pincer_window := 0.5 ## you and Umbra hitting the same monster within this many seconds is a pincer
+@export var pincer_bonus := 2.0 ## extra damage for a pincer
+@export var knight_magnet_range := 10.0 ## an iron knight this close in front of you feels your magnet
+@export var knight_pull_speed := 9.0 ## pull: the knight slides to you this fast, stunned, shield down
+@export var knight_open_time := 1.2 ## after a pull its shield stays down this long
+@export var knight_push_knock := 14.0 ## push: the knight is blown away this fast (it splats on walls and bowls others)
+@export var knight_magnet_cd := 1.0 ## after the magnet moved a knight, it ignores it this long
+@export var iron_plough_knock := 12.0 ## a sliding iron block knocks the monster in its way this fast
+@export var fire_spread_delay := 0.45 ## a burning grass patch starts to spread this long after it caught
+@export var fire_damage_every := 0.5 ## monsters standing in fire take 1 this often (you never do)
 
 const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", "accel", "friction", "brake", "turn_rate", "turn_rate_fast",
 	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
 	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "hammer_hold", "spin_charge_time", "charge_speed", "run_attack_speed", "fast_blade_speed", "perfect_guard", "parry_time", "guard_speed", "guard_push", "guard_push_heavy", "guard_wall", "guard_break", "brace_time", "impale_speed", "impale_damage", "impale_stun", "stuck_time", "surf_friction", "surf_turn", "surf_min", "focus_near", "focus_far", "focus_rate", "bomb_throw_speed",
-	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_lag", "cam_recenter_delay"]
+	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_lag", "cam_recenter_delay",
+	"seed_throw_speed", "seed_throw_up", "bomb_throw_keep", "bomb_friction", "bomb_bat_speed", "bomb_jump_speed", "pincer_window", "pincer_bonus", "knight_magnet_range",
+	"knight_pull_speed", "knight_open_time", "knight_push_knock", "knight_magnet_cd", "iron_plough_knock", "fire_spread_delay", "fire_damage_every"]

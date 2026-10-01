@@ -42,6 +42,10 @@ const WARPS := [
 	["Combat: wolves", "combat_wolves"],
 	["Combat: wall court", "combat_court"],
 	["Test colossus", "colossus_arena"],
+	["Powers: shade twin", "power_twin"],
+	["Powers: iron knights", "power_iron"],
+	["Powers: grass fire", "power_fire"],
+	["Powers: bomb flowers", "power_bombs"],
 ]
 const SHOWN := 12 ## rows the menu shows at once
 const ACTIONS := ["Give every item", "God mode", "Heal", "Shrink / grow"]
