@@ -42,6 +42,12 @@ const WARPS := [
 	["Combat: wolves", "combat_wolves"],
 	["Combat: wall court", "combat_court"],
 	["Test colossus", "colossus_arena"],
+	["Works: entrance", "works_start"],
+	["Works: iron pit and door", "works_iron"],
+	["Works: rack ferry", "works_ferry"],
+	["Works: arm bridge", "works_arm_stand"],
+	["Works: screws", "works_screws"],
+	["Works: gear train", "works_train"],
 ]
 const SHOWN := 12 ## rows the menu shows at once
 const ACTIONS := ["Give every item", "God mode", "Heal", "Shrink / grow"]

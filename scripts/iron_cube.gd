@@ -5,7 +5,9 @@ extends AnimatableBody3D
 ## never from a diagonal, and only the nearest iron in each straight line feels you: anything solid
 ## in between, including other iron, shields it. Pull (negative) draws it toward you until it's
 ## next to you; push (positive) drives it away until something blocks it. Iron carries power (see Power).
-## Pushed off an edge, it drops; if it falls into a pit it goes back to where it started.
+## Pushed off an edge, it drops. Into a pit it fits (as deep as it is tall), it drops in, settles flush with the
+## floor and stays there as floor: you walk across it, other iron slides over it, and it still carries power to
+## conductors touching its faces (including iron standing on it). Into anything deeper it goes back to where it started.
 ## While you're small the iron is too heavy for you to budge: it moves you instead (see Player._magnet_line).
 
 const CELL := 2.0
@@ -18,6 +20,8 @@ var _k := 0.0
 var _fall := 0.0
 var _mat: StandardMaterial3D
 var home := Vector3.ZERO
+var sunk := false ## it dropped into a pit it fits and is floor now
+var _drop_from := 0.0 ## the floor height it fell from
 
 static func make(parent: Node3D, pos: Vector3) -> IronCube:
 	var c := IronCube.new()
@@ -63,13 +67,25 @@ func _physics_process(dt: float) -> void:
 			_moving = false
 		return
 	if not _grounded():
+		if _fall == 0.0:
+			_drop_from = global_position.y
 		_fall += 30.0 * dt
-		global_position += Vector3.DOWN * _fall * dt
-		if global_position.y < home.y - 3.0:
-			global_position = home
+		var fall_q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.2, global_position + Vector3.DOWN * _fall * dt, 1, [get_rid()])
+		var under := get_world_3d().direct_space_state.intersect_ray(fall_q)
+		if not under.is_empty():
+			global_position.y = (under["position"] as Vector3).y # it lands this frame, not inside what it lands on
 			_fall = 0.0
+			_land()
+			return
+		global_position += Vector3.DOWN * _fall * dt
+		if global_position.y < _drop_from - H - 1.0:
+			_go_home() # deeper than a block: a chasm, not a pit
 		return
-	_fall = 0.0
+	if _fall > 0.0:
+		_fall = 0.0
+		_land()
+	if sunk:
+		return
 	var p := _player()
 	if p == null or not p.inventory.has("magnet") or p.small:
 		return
@@ -87,6 +103,24 @@ func _physics_process(dt: float) -> void:
 		_to = dest
 		_k = 0.0
 		_moving = true
+
+## Just landed: snap onto what it landed on. Flush with the floor it fell from, it fills the pit for good.
+func _land() -> void:
+	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.6, global_position + Vector3.DOWN * 0.6, 1, [get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		global_position.y = (hit["position"] as Vector3).y
+	var top := global_position.y + H
+	if absf(top - _drop_from) <= 0.3:
+		global_position.y = _drop_from - H
+		sunk = true
+	elif top < _drop_from - 0.3:
+		_go_home() # the pit is deeper than the block: it would sit below the floor
+
+func _go_home() -> void:
+	global_position = home
+	_fall = 0.0
+	sunk = false
 
 func _player() -> Player:
 	var ps := get_tree().get_nodes_in_group("player")
