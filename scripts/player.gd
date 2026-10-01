@@ -14,6 +14,8 @@ extends CharacterBody3D
 ## through grates and bars, float on water and ride the wind. With the magnet, iron moves you instead of you
 ## moving it: pull flies you to the nearest iron in line, push flies you away from it. Growing back needs room.
 ## Health is counted in half hearts; getting hurt gives knockback and a second of invincibility.
+## Liquids (see Liquids): honey slows you (small, it holds you), wine sways your steering, wading into water
+## puts the candle out. The context button picks up pots and throws or sets them down.
 ## The poleaxe comes with a shield (the guard button). Guarding you walk at guard_speed; a hit from in front is
 ## blocked (it pushes you back, harder for heavy hits, and a heavy hit with a wall right behind you breaks your
 ## guard). Raising the shield just as a hit lands is a perfect guard: the attacker reels open, arrows fly back,
@@ -93,6 +95,7 @@ var spider: Spider = null ## the clockwork spider, once it's out of your pack
 var pilot: Spider = null ## the spider you're steering; you sit still meanwhile
 var leash: Tether = null ## the lash hooked on the spider
 var held_seed: Seed = null
+var held_pot: Pot = null ## a pot over your head (Pot)
 var carried_by: Node3D = null ## the spider carrying you overhead (you're carryable while you steer it)
 var grapple_to := Vector3.ZERO ## the lash is pulling you here
 var grapple_t := 0.0
@@ -271,6 +274,9 @@ func set_small(on: bool, force := false) -> bool:
 		if not room:
 			return false
 	small = on
+	if small and held_pot != null: # too small to hold it up
+		held_pot.set_down(global_position + Vector3.UP * 0.2)
+		held_pot = null
 	(_col.shape as SphereShape3D).radius = r_new
 	global_position = at
 	collision_mask = (1 if small else 1 | 1 << 1 | 1 << 2) | 1 << 4 # small, grates, fences and bars don't stop you; props (seed cubes, the spider) always do
@@ -338,6 +344,9 @@ func drop_holds() -> void:
 	if held_seed != null:
 		held_seed.set_down(global_position + Vector3.UP * 0.2)
 		held_seed = null
+	if held_pot != null:
+		held_pot.set_down(global_position + Vector3.UP * 0.2)
+		held_pot = null
 	if leash != null:
 		leash.queue_free()
 		leash = null
@@ -359,7 +368,7 @@ func focus() -> Node3D:
 	return pilot if pilot != null else self
 
 func hands_full() -> bool:
-	return held_seed != null or carrying != null
+	return held_seed != null or carrying != null or held_pot != null
 
 ## The spider item: the first press sends it out and you steer it; every press after swaps between steering
 ## it and steering yourself. (Pick it back up with the context button next to it.)
@@ -500,14 +509,51 @@ func context() -> void:
 		pilot.context() # steering the spider, it's the spider's hands
 	elif held_seed != null:
 		release_seed()
+	elif held_pot != null:
+		release_pot()
 	elif carrying != null:
 		release_bomb()
 	elif _grab_seed():
+		pass
+	elif _grab_pot():
 		pass
 	elif _pick_bomb():
 		pass
 	elif spider != null and is_instance_valid(spider) and spider.global_position.distance_to(global_position) < radius() + Spider.RADIUS + 0.8:
 		stow_spider()
+
+## Context button next to a pot picks it up (not when you're small: it's too heavy).
+func _grab_pot() -> bool:
+	if small:
+		return false
+	var best: Pot = null
+	var best_d := radius() + Pot.R + 0.9
+	for n in get_tree().get_nodes_in_group("pots"):
+		var pt := n as Pot
+		if pt.holder != null or pt.flying:
+			continue
+		var d := pt.global_position - global_position
+		if absf(d.y) < 1.2 and Vector2(d.x, d.z).length() < best_d:
+			best = pt
+			best_d = Vector2(d.x, d.z).length()
+	if best == null:
+		return false
+	held_pot = best
+	best.hold(self)
+	return true
+
+## Context button with a pot overhead: moving, you throw it (faster the faster you run); standing still, a
+## full pot is lobbed a short way and an empty one is set down in front of you.
+func release_pot() -> void:
+	var pt := held_pot
+	var f := _flat_facing()
+	var moving := _wish().length() > 0.2 or flat_speed() > 2.0
+	held_pot = null
+	if not moving and pt.liquid == "":
+		pt.set_down(global_position + f * (radius() + Pot.R + 0.3) + Vector3.UP * (Pot.R - radius() + 0.05))
+		return
+	var sp := t.pot_throw_speed + (t.pot_throw_run * flat_speed() if moving else 0.0)
+	pt.throw(f * sp + Vector3.UP * t.pot_throw_up, self)
 
 func _pick_bomb() -> bool:
 	for n in get_tree().get_nodes_in_group("bomb_flowers"):
@@ -683,7 +729,7 @@ func _physics_process(dt: float) -> void:
 		return
 	if carrying != null and attack_pressed:
 		release_bomb()
-	elif held_seed != null:
+	elif held_seed != null or held_pot != null:
 		pass
 	elif pound_t >= 0.0:
 		pass # mid-pound: the attack button waits until you land or bounce
@@ -721,6 +767,7 @@ func _physics_process(dt: float) -> void:
 		lock_dir = _flat_facing()
 
 	var wish := _wish() if pilot == null and guard_break_t <= 0.0 else Vector3.ZERO
+	wish = Liquids.player_wish(self, wish, dt) # wine sways it
 	last_wish = wish
 	if candle_lit:
 		Lighting.spread_heat(global_position, t.candle_touch, dt, self)
@@ -790,6 +837,7 @@ func _physics_process(dt: float) -> void:
 	_was_on_floor = on_floor
 	# running fast up a slope, a light snap lets you fly off its top edge instead of being pulled over it
 	floor_snap_length = 0.1 if on_floor and velocity.y > 3.0 else 0.7
+	Liquids.player_drag(self) # honey
 	move_and_slide()
 	_touch_after_move()
 	if _teleported > 0:

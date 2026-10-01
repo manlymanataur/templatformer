@@ -2,9 +2,11 @@ class_name Water
 extends Node3D
 ## Deep water. At normal size you sink: going under puts you back at back_to, like falling in a pit.
 ## Small, you float with your middle at the surface and paddle at small_swim_speed; jump to climb out.
+## Crates float on it and drift with its current. Carry an empty pot into it and the pot fills.
 
 var box := AABB() ## the water's volume; its top is the surface
 var back_to := Vector3.ZERO
+var current := Vector3.ZERO ## floating things (crates) drift with this
 
 func surface() -> float:
 	return box.end.y

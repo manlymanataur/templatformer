@@ -108,6 +108,8 @@ func lashed() -> bool:
 	return player != null and player.leash != null and player.leash.b == self
 
 func _physics_process(dt: float) -> void:
+	if Liquids.frozen_step(self, dt): # rock candy
+		return
 	_t += dt
 	var target := wish * t.spider_speed if piloted else Vector3.ZERO
 	var hv := Vector3(velocity.x, 0, velocity.z).move_toward(target, 40.0 * dt)
@@ -117,6 +119,7 @@ func _physics_process(dt: float) -> void:
 		velocity.y = -0.5
 	else:
 		velocity.y -= t.gravity * dt
+	Liquids.creature_after(self) # honey holds it fast
 	move_and_slide()
 	if global_position.y < -30.0:
 		player.stow_spider() # fell off the world: it climbs back into your pack

@@ -342,6 +342,7 @@ func _combat_tests() -> void:
 	await _poleaxe_tests()
 	await _works_tests(arena)
 	await _powers_tests()
+	await _cellar_tests()
 
 func _apex_of_next_jump() -> float:
 	# hold jump from the moment we leave the ground until we come back down
@@ -3370,3 +3371,475 @@ func _powers_tests() -> void:
 	if is_instance_valid(burner):
 		burner.queue_free()
 	await _fresh_player(court)
+
+## A fresh player for the liquid tests: sober, not in honey.
+func _liquid_player(pos: Vector3) -> void:
+	await _fresh_player(pos)
+	var c := Coat.on(p)
+	if c != null:
+		c.drunk = 0.0
+		c.in_honey = false
+		c.honey_t = 0.0
+
+## Put a pot of kind in the player's hands.
+func _hand_pot(kind: String) -> Pot:
+	var pt := Pot.make(level, p.global_position + Vector3.UP * 1.0, level.t, kind)
+	await physics_frame
+	p.held_pot = pt
+	pt.hold(p)
+	await physics_frame
+	return pt
+
+## Spilled puddles from a test (not the level's pools) go away.
+func _mop() -> void:
+	for n in get_nodes_in_group("puddles"):
+		if not (n as Puddle).permanent:
+			n.queue_free()
+	await physics_frame
+
+## Throw what you hold with the context button and wait for it to break. Returns where it broke.
+func _release_and_wait(pt: Pot, secs := 1.5) -> Vector3:
+	var landed := {}
+	pt.smashed.connect(func(at: Vector3) -> void: landed["at"] = at)
+	p.ai_context = true
+	for i in int(secs * 60.0):
+		await physics_frame
+		if landed.has("at"):
+			break
+	return landed.get("at", Vector3.INF)
+
+## Honey & Wine (the Cellar): pots, puddles, honey and rock candy, the swap charm, wine, water, crates.
+func _cellar_tests() -> void:
+	var t: Tuning = level.t
+	var m: Dictionary = level.marks
+	var L := Vector3(-95, 0.6, -95) # open floor, nothing else within 20 m
+
+	# 115. A pot carried under the hive fills with honey
+	await _liquid_player(L)
+	var hive := Spout.make(level, Vector3(L.x, 3.0, L.z), "honey")
+	var pot := Pot.make(level, Vector3(L.x, 0.4, L.z - 1.2), t)
+	await frames(3)
+	p.ai_context = true
+	await frames(5)
+	check("context picks up a pot, and under the hive it fills with honey", p.held_pot == pot and pot.liquid == "honey",
+		"held %s, liquid '%s'" % [p.held_pot == pot, pot.liquid])
+	hive.queue_free()
+
+	# 116. Throw distances: standing still a full pot is lobbed about 5 m; at a run it flies much further
+	var from := p.global_position
+	var at := await _release_and_wait(pot)
+	var lob := Vector2(at.x - from.x, at.z - from.z).length()
+	check("standing still, a full pot is lobbed 4-5.5 m (%.0f m/s, up %.0f)" % [t.pot_throw_speed, t.pot_throw_up], lob > 4.0 and lob < 5.5, "%.1f m" % lob)
+	await _mop()
+	await _liquid_player(L + Vector3(-5, 0, 10))
+	pot = await _hand_pot("water")
+	p.ai_move = Vector2(1, 0)
+	await frames(80)
+	var run_speed := p.flat_speed()
+	from = p.global_position
+	at = await _release_and_wait(pot)
+	p.ai_move = Vector2.ZERO
+	var far := Vector2(at.x - from.x, at.z - from.z).length()
+	check("thrown at a run (%.0f m/s), a pot flies at least 15 m" % run_speed, far >= 15.0 and far < 21.0, "%.1f m" % far)
+	await _mop()
+	await _liquid_player(L)
+	pot = await _hand_pot("")
+	p.ai_context = true
+	await frames(10)
+	check("standing still, an empty pot is set down in front of you", is_instance_valid(pot) and pot.holder == null and not pot.flying
+		and p.held_pot == null and (pot.global_position - p.global_position).dot(Vector3.FORWARD) > 0.8, "")
+	if is_instance_valid(pot):
+		pot.queue_free()
+
+	# 117. Liquid stays where the level plans: a puddle of fixed size where it lands
+	await _liquid_player(L + Vector3(0, 0, 12))
+	Liquids.spill(level, "water", Vector3(L.x, 1.0, L.z))
+	await frames(2)
+	var found: Array = []
+	for n in get_nodes_in_group("puddles"):
+		if not (n as Puddle).permanent:
+			found.append(n)
+	var one_ok: bool = found.size() == 1 and absf((found[0] as Puddle).radius - Liquids.RADIUS["water"]) < 0.01 \
+		and Vector2((found[0] as Puddle).global_position.x - L.x, (found[0] as Puddle).global_position.z - L.z).length() < 0.3
+	Liquids.spill(level, "water", Vector3(L.x + 0.5, 1.0, L.z))
+	await frames(2)
+	var still := 0
+	for n in get_nodes_in_group("puddles"):
+		if not (n as Puddle).permanent and not n.is_queued_for_deletion():
+			still += 1
+	check("a spill lies where it lands as one %.1f m puddle, and a second on top doesn't spread it" % Liquids.RADIUS["water"],
+		one_ok and still == 1 and absf((found[0] as Puddle).radius - Liquids.RADIUS["water"]) < 0.01, "%d puddles, then %d" % [found.size(), still])
+	await _mop()
+
+	# 118. Honey: normal size it holds you to honey_slow and a low jump; small it holds you fast
+	await _liquid_player(L)
+	var honey := Puddle.make(level, "honey", Vector3(L.x, 0, L.z), 6.0)
+	await frames(2)
+	p.ai_move = Vector2(1, 0)
+	await frames(60)
+	var big_speed := p.flat_speed()
+	p.ai_move = Vector2.ZERO
+	await frames(30)
+	var y0 := p.global_position.y
+	var top := y0
+	p.ai_jump = true
+	for i in 50:
+		await physics_frame
+		top = maxf(top, p.global_position.y)
+	p.ai_jump = false
+	check("normal size in honey you move at most %.0f m/s and jump under 1 m" % t.honey_slow, big_speed > 2.0 and big_speed <= t.honey_slow + 0.05 and top - y0 < 1.0,
+		"%.1f m/s, jump %.2f m" % [big_speed, top - y0])
+	await _liquid_player(L)
+	p.set_small(true)
+	await frames(30)
+	var small_at := p.global_position
+	p.ai_move = Vector2(1, 0)
+	await frames(60)
+	p.ai_move = Vector2.ZERO
+	p.ai_jump = true
+	top = p.global_position.y
+	for i in 30:
+		await physics_frame
+		top = maxf(top, p.global_position.y)
+	p.ai_jump = false
+	var moved := Vector2(p.global_position.x - small_at.x, p.global_position.z - small_at.z).length()
+	check("small, honey holds you fast: no steps, no jump", moved < 0.1 and top - small_at.y < 0.1, "moved %.2f m, rose %.2f m" % [moved, top - small_at.y])
+	p.set_small(false, true)
+
+	# 119. Honey draws a blob from 9 m and holds it, even with you close; a brute in honey is slowed
+	await _liquid_player(L + Vector3(0, 0, 25))
+	var blob := Monster.spawn(level, Vector3(L.x + 9.0, 0.6, L.z), "blob")
+	blob.drop_heart = false
+	var drawn := -1.0
+	for i in 360:
+		await physics_frame
+		var bc := Coat.on(blob)
+		if bc != null and bc.in_honey and Vector2(blob.velocity.x, blob.velocity.z).length() < 0.05:
+			drawn = i / 60.0
+			break
+	p.teleport(blob.global_position + Vector3(0, 0, 3.0))
+	var held_at := blob.global_position
+	await frames(90)
+	var blob_moved := Vector2(blob.global_position.x - held_at.x, blob.global_position.z - held_at.z).length()
+	check("honey %.0f m away draws a blob, and it stays stuck with you 3 m away" % 9.0, drawn > 0.0 and blob_moved < 0.3 and Coat.on(blob).honey,
+		"stuck after %.1f s, then moved %.2f m, coated %s" % [drawn, blob_moved, Coat.on(blob).honey if Coat.on(blob) != null else false])
+	blob.queue_free()
+	await _liquid_player(L + Vector3(4.5, 0, 0))
+	var brute := Monster.spawn(level, Vector3(L.x - 3.0, 0.9, L.z), "brute")
+	brute.drop_heart = false
+	await frames(30)
+	var b0 := brute.global_position
+	await frames(60)
+	var brute_speed := Vector2(brute.global_position.x - b0.x, brute.global_position.z - b0.z).length()
+	check("a brute in honey is slowed to %.1f m/s" % Liquids.MONSTER_HONEY_SPEED, brute_speed > 0.3 and brute_speed < Liquids.MONSTER_HONEY_SPEED + 0.1, "%.2f m/s" % brute_speed)
+	brute.queue_free()
+	honey.queue_free()
+	await _mop()
+
+	# 120. Honey on a blob plus heat: rock candy. The swap charm trades places with it; you keep your speed
+	await _liquid_player(L + Vector3(0, 0, 12))
+	p.inventory.add("swap")
+	var brazier := Brazier.make(level, Vector3(L.x + 2.0, 0, L.z), true)
+	var dummy := await _dummy(Vector3(L.x, 0.6, L.z))
+	var early := p.inventory.use(p.inventory.slots.find("swap"), p)
+	var splat := Pot.make(level, dummy.global_position + Vector3(0, 2.0, 0), t, "honey")
+	splat.throw(Vector3.DOWN * 4.0)
+	var candy_t := -1.0
+	for i in 120:
+		await physics_frame
+		if Coat.is_candy(dummy):
+			candy_t = i / 60.0
+			break
+	check("a honey pot coats a blob, and a lit brazier 2 m away hardens it into rock candy (%.1f s of heat) within a second" % t.candy_heat_time,
+		not early and candy_t >= t.candy_heat_time and candy_t <= 1.0, "swap refused before: %s, candy after %.2f s" % [not early, candy_t])
+	p.ai_move = Vector2(0, -1)
+	await frames(30)
+	var pv := p.velocity
+	var was := p.global_position
+	var candy_at := dummy.global_position
+	await _use("swap")
+	var swapped: bool = Vector2(p.global_position.x - candy_at.x, p.global_position.z - candy_at.z).length() < 0.6 \
+		and Vector2(dummy.global_position.x - was.x, dummy.global_position.z - was.z).length() < 1.0
+	var kept := Vector2(p.velocity.x - pv.x, p.velocity.z - pv.z).length()
+	check("swap charm: you and the rock candy trade places and each keeps its own velocity", swapped and kept < 1.5
+		and Vector2(dummy.velocity.x, dummy.velocity.z).length() < 0.1, "swapped %s, your speed %.1f -> %.1f m/s" % [swapped, Vector2(pv.x, pv.z).length(), p.flat_speed()])
+	p.ai_move = Vector2.ZERO
+	Liquids.spill(level, "water", dummy.global_position + Vector3.UP * 1.0)
+	await frames(2)
+	check("water washes rock candy off", not Coat.is_candy(dummy), "")
+	dummy.queue_free()
+	brazier.queue_free()
+	await _mop()
+
+	# 121. Sober monsters don't step off a ledge
+	await _liquid_player(L)
+	var plat := level.box(Vector3(L.x, 1.5, L.z - 8.0), Vector3(6, 3, 6), Basis(), Color(0.5, 0.5, 0.5)) as StaticBody3D
+	await frames(2)
+	var perch := Monster.spawn(level, Vector3(L.x, 3.6, L.z - 8.0), "blob")
+	perch.drop_heart = false
+	await frames(180)
+	check("a sober blob chasing you stops at the edge of a 3 m drop", is_instance_valid(perch) and perch.global_position.y > 2.5, "y %.1f" % (perch.global_position.y if is_instance_valid(perch) else -99.0))
+	if is_instance_valid(perch):
+		perch.queue_free()
+	plat.queue_free()
+
+	# 122. Last call: wine on the bridge makes the brute drunk and it staggers off; water washes the wine away
+	await _liquid_player(m["cellar_bridge"])
+	var bridge_brute := Monster.spawn(level, m["cellar_bridge_mid"], "brute")
+	bridge_brute.drop_heart = false
+	bridge_brute.set_meta("leash", 5.0)
+	await frames(30)
+	p.teleport(m["cellar_bridge_end"])
+	p.facing = Vector3.LEFT
+	await frames(5)
+	pot = await _hand_pot("wine")
+	var wine_at := await _release_and_wait(pot)
+	var fell := -1.0
+	for i in 720:
+		await physics_frame
+		if not is_instance_valid(bridge_brute) or bridge_brute.global_position.y < -1.0:
+			fell = i / 60.0
+			break
+	check("wine lobbed onto the bridge: the brute drinks, staggers and falls off within 12 s", fell >= 0.0, "fell after %.1f s" % fell)
+	var wine_left := func() -> int:
+		var n := 0
+		for pd in get_nodes_in_group("puddles"):
+			if (pd as Puddle).kind == "wine" and not (pd as Puddle).permanent and not pd.is_queued_for_deletion() and (pd as Puddle).touches(wine_at, 1.0):
+				n += 1
+		return n
+	var before_wash: int = wine_left.call()
+	p.teleport(m["cellar_bridge_end"])
+	p.facing = Vector3.LEFT
+	await frames(5)
+	pot = await _hand_pot("water")
+	await _release_and_wait(pot)
+	await frames(2)
+	check("a pot of water washes the wine off the bridge", before_wash == 1 and wine_left.call() == 0, "wine puddles %d then %d" % [before_wash, wine_left.call()])
+	if is_instance_valid(bridge_brute):
+		bridge_brute.queue_free()
+	await _mop()
+
+	# 123. Fire runs along wine: a brazier lights the first puddle and three in a row burn, then the grass past them
+	await _liquid_player(L + Vector3(0, 0, 15))
+	var wines: Array[Puddle] = []
+	for k in 3:
+		wines.append(Puddle.make(level, "wine", Vector3(L.x + k * 3.0, 0, L.z), 1.8))
+	var grass := Burnable.make(level, "grass", Vector3(L.x + 8.0, 0, L.z), Vector3(2, 0.3, 2))
+	var fire := Brazier.make(level, Vector3(L.x - 4.0, 0, L.z), true)
+	var burned := [false, false, false]
+	for i in 240:
+		await physics_frame
+		for k in 3:
+			if is_instance_valid(wines[k]) and wines[k].burning:
+				burned[k] = true
+	check("a lit brazier lights wine %.0f m away and fire runs along three puddles to the grass" % (4.0 - 1.8), burned == [true, true, true] and (grass.burning or grass.burnt),
+		"burned %s, grass %s" % [burned, grass.burning or grass.burnt])
+	grass.queue_free()
+	fire.queue_free()
+	await _mop()
+
+	# 124. Water puts fire out: burning grass, a brazier, the candle hat; wet grass and wet ground won't take fire or wine
+	await _liquid_player(L)
+	var g2 := Burnable.make(level, "grass", Vector3(L.x, 0, L.z - 4.0), Vector3(2, 0.3, 2))
+	g2.ignite()
+	var br2 := Brazier.make(level, Vector3(L.x + 3.0, 0, L.z - 4.0), true)
+	await frames(2)
+	Liquids.spill(level, "water", Vector3(L.x + 1.5, 0.5, L.z - 4.0))
+	await frames(2)
+	var out := not g2.burning and not br2.lit
+	g2.heat(1.0)
+	Liquids.place(level, "wine", Vector3(L.x + 1.5, 0, L.z - 4.0), Liquids.RADIUS["wine"])
+	await frames(2)
+	var wine_on_wet := 0
+	for n in get_nodes_in_group("puddles"):
+		if (n as Puddle).kind == "wine" and not (n as Puddle).permanent:
+			wine_on_wet += 1
+	check("a water splash puts out burning grass and a brazier; wet, the grass won't catch and the ground won't take wine",
+		out and not g2.burning and wine_on_wet == 0, "out %s, grass relit %s, wine puddles %d" % [out, g2.burning, wine_on_wet])
+	p.inventory.add("candle")
+	p.set_candle(true)
+	p.teleport(Vector3(L.x + 4.2, 0.6, L.z - 4.0))
+	await frames(10)
+	check("the candle lights the doused brazier again", br2.lit, "")
+	p.teleport(Vector3(L.x, 0.6, L.z + 6.0))
+	await frames(5)
+	Liquids.spill(level, "water", p.global_position + Vector3(0.6, 0.6, 0))
+	await frames(2)
+	var splashed_out := not p.candle_lit
+	p.set_candle(true)
+	var basin_pool := Puddle.pool(level, "water", AABB(Vector3(L.x - 1.5, 0, L.z + 10.0), Vector3(3, 0.3, 3)))
+	p.teleport(Vector3(L.x, 0.6, L.z + 11.5))
+	await frames(5)
+	check("the candle hat goes out when you're splashed and when you wade into water", splashed_out and not p.candle_lit,
+		"splashed %s, waded %s" % [splashed_out, not p.candle_lit])
+	basin_pool.queue_free()
+	g2.queue_free()
+	br2.queue_free()
+	await _mop()
+
+	# 125. Crates: one catches from burning grass and burns away; water saves another; a crate casts a shadow
+	await _liquid_player(L + Vector3(0, 0, 12))
+	var c1 := Crate.make(level, Vector3(L.x + 4.0, 0, L.z), t)
+	var g3 := Burnable.make(level, "grass", Vector3(L.x + 6.0, 0, L.z), Vector3(2, 0.3, 2))
+	var c2 := Crate.make(level, Vector3(L.x - 4.0, 0, L.z), t)
+	await frames(2)
+	g3.ignite()
+	c2.ignite()
+	var caught := false
+	for i in 60:
+		await physics_frame
+		caught = caught or (is_instance_valid(c1) and c1.burning)
+	Liquids.spill(level, "water", c2.global_position + Vector3.UP * 1.3)
+	await frames(2)
+	var saved := is_instance_valid(c2) and not c2.burning
+	c2.heat(1.0)
+	await frames(int(t.crate_burn * 60.0))
+	check("a crate next to burning grass catches and burns away in %.0f s" % t.crate_burn, caught and not is_instance_valid(c1), "caught %s, gone %s" % [caught, not is_instance_valid(c1)])
+	check("water puts a burning crate out, and wet it won't catch again", saved and is_instance_valid(c2) and not c2.burning, "")
+	c2.queue_free()
+	g3.queue_free()
+	var lamp: Brazier = m["cellar_candy_brazier"]
+	var spot := Vector3(lamp.global_position.x + 3.5, 0.5, lamp.global_position.z)
+	var lit_before := Lighting.is_lit(spot, level)
+	var shade := Crate.make(level, Vector3(lamp.global_position.x + 1.8, 0, lamp.global_position.z), t)
+	await frames(3)
+	check("a crate blocks light: the spot behind it is in shadow", lit_before and not Lighting.is_lit(spot, level, [p.get_rid()]), "lit before %s" % lit_before)
+	shade.queue_free()
+	await _mop()
+
+	# 126. Pots and crates smash from a poleaxe hit; a bomb blast smashes a pot
+	await _liquid_player(L)
+	p.inventory.add("poleaxe")
+	var sp := Pot.make(level, Vector3(L.x, 0.4, L.z - 1.6), t, "honey")
+	await frames(10)
+	p.ai_attack = true
+	await frames(24)
+	var spilt := 0
+	for n in get_nodes_in_group("puddles"):
+		if (n as Puddle).kind == "honey" and not (n as Puddle).permanent:
+			spilt += 1
+	check("a poleaxe thrust smashes a pot and it spills where it stood", not is_instance_valid(sp) and spilt == 1, "honey puddles %d" % spilt)
+	await _mop()
+	var box := Crate.make(level, Vector3(L.x, 0, L.z - 2.3), t)
+	await frames(10)
+	p.ai_attack = true
+	await frames(30)
+	check("a poleaxe thrust smashes a crate", not is_instance_valid(box), "")
+	var bp := Pot.make(level, Vector3(L.x + 6.0, 0.4, L.z), t)
+	await frames(5)
+	var bomb := Bomb.new()
+	level.add_child(bomb)
+	bomb.global_position = bp.global_position + Vector3(1.0, 0.3, 0)
+	bomb.explode()
+	await frames(2)
+	check("a bomb blast smashes a pot", not is_instance_valid(bp), "")
+	await _mop()
+
+	# 127. Raft: one pot of water fills the dry channel; the crate pushed in floats and carries you across
+	var channel: Basin = m["cellar_raft_channel"]
+	var crate: Crate = m["cellar_raft_crate"]
+	await _liquid_player(Vector3(147.0, 0.6, -132.0))
+	p.facing = Vector3.RIGHT
+	pot = await _hand_pot("water")
+	await _release_and_wait(pot)
+	await frames(5)
+	check("one pot of water fills the dry 14 x 12 x 3 m channel to the brim", channel.kind == "water" and channel.water != null, "full of '%s'" % channel.kind)
+	await _liquid_player(m["cellar_raft_push"])
+	p.ai_move = Vector2(1, 0)
+	for i in 300:
+		await physics_frame
+		if crate.global_position.x > 149.3:
+			break
+	p.ai_move = Vector2.ZERO
+	await frames(90)
+	var surface := channel.water.surface() if channel.water != null else 0.0
+	var floats := crate.floating and absf(crate.global_position.y - (surface + Crate.FLOAT)) < 0.25
+	p.teleport(crate.global_position + Vector3.UP * (Crate.HALF + p.radius() + 0.05))
+	var rode := false
+	for i in 600:
+		await physics_frame
+		if p.global_position.x > 158.0 and p.global_position.y > surface:
+			rode = true
+			break
+	check("pushed in, the crate floats %.1f m over the surface and the current carries you across on it" % Crate.FLOAT, floats and rode,
+		"floats %s (y %.2f, surface %.2f), rode to x %.1f" % [floats, crate.global_position.y, surface, p.global_position.x])
+
+	# 128. Fire door: burning wine in the trough throws you back; a pot of water puts it out and you walk through
+	var trough: Puddle = m["cellar_trough"]
+	await _liquid_player(m["cellar_fire_near"])
+	var was_burning := trough.burning
+	p.ai_move = Vector2(-1, 0)
+	await frames(90)
+	p.ai_move = Vector2.ZERO
+	var blocked: bool = p.hp < p.max_hp and p.global_position.x > 150.0
+	await _liquid_player(m["cellar_fire_near"])
+	p.facing = Vector3.LEFT
+	pot = await _hand_pot("water")
+	await _release_and_wait(pot)
+	await frames(2)
+	var doused := not trough.burning
+	p.ai_move = Vector2(-1, 0)
+	await frames(120)
+	var sober := Coat.on(p) == null or Coat.on(p).drunk <= 0.0
+	p.ai_move = Vector2.ZERO
+	check("the burning trough throws you back; a pot of water puts it out and you walk through unhurt and sober",
+		was_burning and blocked and doused and sober and p.global_position.x < 148.0 and p.hp == p.max_hp,
+		"burning %s, blocked %s, doused %s, sober %s, reached x %.1f with hp %d" % [was_burning, blocked, doused, sober, p.global_position.x, p.hp])
+	await _mop()
+	var runnel: Runnel = m["cellar_runnel"]
+	Liquids.spill(level, "water", runnel.top.lerp(runnel.bottom, 0.2) + Vector3.UP * 1.0)
+	await frames(2)
+	var end := runnel.bottom + Vector3(runnel.bottom.x - runnel.top.x, 0, runnel.bottom.z - runnel.top.z).normalized() * 0.6
+	var at_end := 0
+	var on_runnel := 0
+	for n in get_nodes_in_group("puddles"):
+		var pd := n as Puddle
+		if pd.permanent or pd.kind != "water":
+			continue
+		if Vector2(pd.global_position.x - end.x, pd.global_position.z - end.z).length() < 0.8:
+			at_end += 1
+		else:
+			on_runnel += 1
+	check("water poured on a runnel runs down it and puddles only at its low end", at_end == 1 and on_runnel == 0, "%d at the end, %d elsewhere" % [at_end, on_runnel])
+	await _mop()
+
+	# 129. Candy trap: a running throw of honey lands by the brazier across the 13 m pit, the blob comes for it
+	# and turns to rock candy, and the swap charm takes you across
+	await _liquid_player(Vector3(137.0, 0.6, -108.0))
+	p.inventory.add("swap")
+	var trap_blob := Monster.spawn(level, m["cellar_candy_blob"], "blob")
+	trap_blob.drop_heart = false
+	pot = await _hand_pot("honey")
+	p.ai_move = Vector2(1, 0)
+	for i in 120:
+		await physics_frame
+		if p.global_position.x >= 147.5:
+			break
+	var landed := {}
+	pot.smashed.connect(func(a: Vector3) -> void: landed["at"] = a)
+	p.ai_context = true
+	await physics_frame
+	p.ai_move = Vector2(-1, 0)
+	await frames(25)
+	p.ai_move = Vector2.ZERO
+	await frames(40)
+	var honey_at: Vector3 = landed.get("at", Vector3.INF)
+	var by_fire := Vector2(honey_at.x - lamp.global_position.x, honey_at.z - lamp.global_position.z).length()
+	var candied := -1.0
+	for i in 600:
+		await physics_frame
+		if is_instance_valid(trap_blob) and Coat.is_candy(trap_blob):
+			candied = i / 60.0
+			break
+	await _liquid_player(m["cellar_candy_edge"])
+	p.inventory.add("swap")
+	p.facing = Vector3.RIGHT
+	await _use("swap")
+	await frames(10)
+	check("candy trap: run-thrown honey lands %.1f m from the brazier across the pit, the blob turns to rock candy, and you swap across" % by_fire,
+		honey_at.x > 163.0 and by_fire <= t.heat_reach and candied >= 0.0 and p.global_position.x > 160.0 and p.global_position.y > -0.5,
+		"honey at x %.1f, candy after %.1f s, you at x %.1f" % [honey_at.x, candied, p.global_position.x])
+	if is_instance_valid(trap_blob):
+		trap_blob.queue_free()
+	await _mop()
+	await _liquid_player(L)

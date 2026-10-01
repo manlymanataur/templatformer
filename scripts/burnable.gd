@@ -7,11 +7,13 @@ extends StaticBody3D
 ## Powers book: grass waits t.fire_spread_delay after catching before it spreads, so fire walks across a field
 ## of small patches (field() lays 1 m ones) cell by cell. Burning grass hurts monsters standing in it (1 every
 ## t.fire_damage_every) but never you: your own fire attacks are safe to fight in.
+## Water puts a fire out (douse) and keeps them wet: wet things don't catch for wet_time.
 
 var kind := "grass" ## "grass" or "vines"
 var size := Vector3(2, 0.3, 2)
 var burning := false
 var burnt := false
+var wet := 0.0 ## seconds left before water dries off it; wet, it won't catch
 var regrow := 0.0 ## seconds until a burnt one grows back; 0 never
 var _regrow_t := 0.0
 var _col: CollisionShape3D
@@ -90,7 +92,7 @@ func _ready() -> void:
 		_flames.add_child(f)
 
 func heat(dt: float) -> void:
-	if burning or burnt:
+	if burning or burnt or wet > 0.0:
 		return
 	_warm += dt
 	if _warm >= IGNITE[kind]:
@@ -105,7 +107,17 @@ func ignite() -> void:
 	_sear = 0.0
 	_flames.visible = true
 
+## Water on it: a fire goes out (what's burnt stays burnt), and it stays wet for a while.
+func douse() -> void:
+	if burning:
+		burning = false
+		_flames.visible = false
+	_warm = 0.0
+	wet = Liquids.tuning(get_tree()).wet_time
+
 func _physics_process(dt: float) -> void:
+	if wet > 0.0:
+		wet -= dt
 	if burnt and regrow > 0.0:
 		_regrow_t += dt
 		if _regrow_t >= regrow:

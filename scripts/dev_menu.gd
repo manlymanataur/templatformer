@@ -54,6 +54,10 @@ const WARPS := [
 	["Powers: iron knights", "power_iron"],
 	["Powers: grass fire", "power_fire"],
 	["Powers: bomb flowers", "power_bombs"],
+	["Cellar: candy trap", "cellar_candy"],
+	["Cellar: last call (bridge)", "cellar_bridge"],
+	["Cellar: raft", "cellar_raft"],
+	["Cellar: fire door", "cellar_fire"],
 ]
 const SHOWN := 12 ## rows the menu shows at once
 const ACTIONS := ["Give every item", "God mode", "Heal", "Shrink / grow"]

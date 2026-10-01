@@ -2,6 +2,7 @@ class_name Brazier
 extends StaticBody3D
 ## A stone bowl. Touch it with fire (the candle hat, or burning grass next to it) and it burns for good,
 ## lighting everything it can see within reach. A lantern is a brazier that starts lit.
+## Water puts it out (put_out); fire or the candle lights it again.
 
 signal lit_up
 
@@ -71,6 +72,15 @@ func light() -> void:
 		_flame.visible = true
 		_light.visible = true
 	lit_up.emit()
+
+## Water on it: the fire's out until something lights it again.
+func put_out() -> void:
+	if not lit:
+		return
+	lit = false
+	if _flame != null:
+		_flame.visible = false
+		_light.visible = false
 
 # light source
 func is_shining() -> bool:

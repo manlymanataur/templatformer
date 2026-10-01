@@ -29,6 +29,7 @@ const AREAS := {
 	"Works": AABB(Vector3(202, -6, -44), Vector3(66, 16, 60)),
 	"Works (screws)": AABB(Vector3(160, -6, -14), Vector3(42, 16, 30)),
 	"Powers yard": AABB(Vector3(120, -4, -43), Vector3(39, 9.5, 86)), # stops under the 6 m roofs
+	"Cellar": AABB(Vector3(134, -6, -152), Vector3(40, 13.5, 52)), # stops under the 8 m roof
 }
 
 class Grid:
