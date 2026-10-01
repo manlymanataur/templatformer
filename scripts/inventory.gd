@@ -17,6 +17,8 @@ const ITEMS := {
 	"spider": {"name": "Clockwork Spider", "color": Color(0.6, 0.55, 0.5), "slot": true, "max": 1, "toggle": true},
 	# Winch's leash and Propagule's lash in one rope
 	"lash": {"name": "Lash", "color": Color(0.85, 0.7, 0.4), "slot": true, "max": 1, "toggle": true},
+	# Honey & Wine: trade places with rock candy you can see (see Liquids.swap); never used up
+	"swap": {"name": "Swap Charm", "color": Color(1.0, 0.5, 0.75), "slot": true, "max": 1},
 }
 const SLOTS := 3
 
@@ -78,6 +80,8 @@ func use(slot: int, player: Player) -> bool:
 			player.use_lash()
 			changed.emit()
 			return true
+		"swap":
+			return Liquids.swap(player)
 		"potion":
 			if player.hp >= player.max_hp:
 				return false

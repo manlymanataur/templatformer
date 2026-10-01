@@ -98,6 +98,25 @@ extends Resource
 @export var pogo_speed := 13.0 ## bounce up off whatever the homing attack hits
 @export var rail_min_speed := 10.0 ## you grind at least this fast
 @export var boost_pad_speed := 30.0
+@export var pot_throw_speed := 7.0 ## a pot: throw speed standing still (a full pot is lobbed about 5 m)
+@export var pot_throw_run := 1.6 ## a pot thrown on the run gets this much of your speed on top
+@export var pot_throw_up := 8.0 ## a thrown pot's upward speed
+@export var pot_respawn := 2.0 ## seconds for a pot shelf to put out a new pot after one smashes
+@export var honey_slow := 4.0 ## normal size in honey you move at most this fast (small things are stuck)
+@export var honey_jump := 0.5 ## in honey your jump speed is times this (small: no jump)
+@export var honey_cover := 0.5 ## seconds standing in honey before it coats a thing
+@export var candy_heat_time := 0.3 ## seconds of heat that harden a honey coat into rock candy
+@export var heat_reach := 3.0 ## a lit brazier warms honey and lights wine this far from it
+@export var candle_heat := 3.0 ## the lit candle hat hardens honey this far from you
+@export var swap_range := 24.0 ## the swap charm reaches rock candy this far away
+@export var drunk_time := 6.0 ## wine: seconds your steering sways
+@export var drunk_sway := 0.9 ## wine: how far (radians) your steering swings
+@export var drunk_monster_time := 8.0 ## wine: seconds a monster wanders
+@export var wet_time := 45.0 ## water leaves things wet this long: wet ground won't take wine or fire
+@export var wine_burn := 2.5 ## a wine puddle burns this long, then it's gone
+@export var lure_range := 13.0 ## honey draws blobs and wolves, wine draws brutes and rushers, from this far
+@export var crate_push_speed := 2.5 ## how fast you push a crate
+@export var crate_burn := 4.0 ## a burning crate burns away after this long
 @export var cam_distance := 7.0
 @export var cam_lag := 10.0
 @export var cam_recenter_delay := 0.8
@@ -106,4 +125,5 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", 
 	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
 	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "hammer_hold", "spin_charge_time", "charge_speed", "run_attack_speed", "fast_blade_speed", "perfect_guard", "parry_time", "guard_speed", "guard_push", "guard_push_heavy", "guard_wall", "guard_break", "brace_time", "impale_speed", "impale_damage", "impale_stun", "stuck_time", "surf_friction", "surf_turn", "surf_min", "focus_near", "focus_far", "focus_rate", "bomb_throw_speed",
-	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_lag", "cam_recenter_delay"]
+	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_lag", "cam_recenter_delay",
+	"pot_throw_speed", "pot_throw_run", "pot_throw_up", "pot_respawn", "honey_slow", "honey_jump", "honey_cover", "candy_heat_time", "heat_reach", "candle_heat", "swap_range", "drunk_time", "drunk_sway", "drunk_monster_time", "wet_time", "wine_burn", "lure_range", "crate_push_speed", "crate_burn"]

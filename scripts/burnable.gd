@@ -2,11 +2,13 @@ class_name Burnable
 extends StaticBody3D
 ## Vines (a solid wall) and grass (ground cover you walk through). Heat sets them alight; they burn
 ## for a moment, shining and spreading fire to whatever they touch, then vines are gone and grass is ash.
+## Water puts a fire out (douse) and keeps them wet: wet things don't catch for wet_time.
 
 var kind := "grass" ## "grass" or "vines"
 var size := Vector3(2, 0.3, 2)
 var burning := false
 var burnt := false
+var wet := 0.0 ## seconds left before water dries off it; wet, it won't catch
 var _warm := 0.0
 var _left := 0.0
 var _mesh: MeshInstance3D
@@ -71,7 +73,7 @@ func _ready() -> void:
 		_flames.add_child(f)
 
 func heat(dt: float) -> void:
-	if burning or burnt:
+	if burning or burnt or wet > 0.0:
 		return
 	_warm += dt
 	if _warm >= IGNITE[kind]:
@@ -84,7 +86,17 @@ func ignite() -> void:
 	_left = BURN[kind]
 	_flames.visible = true
 
+## Water on it: a fire goes out (what's burnt stays burnt), and it stays wet for a while.
+func douse() -> void:
+	if burning:
+		burning = false
+		_flames.visible = false
+	_warm = 0.0
+	wet = Liquids.tuning(get_tree()).wet_time
+
 func _physics_process(dt: float) -> void:
+	if wet > 0.0:
+		wet -= dt
 	if not burning:
 		return
 	Lighting.spread_heat(global_position + Vector3.UP * 0.3, SPREAD_REACH + maxf(size.x, size.z) / 2.0, dt, self, self)

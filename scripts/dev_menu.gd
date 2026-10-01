@@ -42,6 +42,10 @@ const WARPS := [
 	["Combat: wolves", "combat_wolves"],
 	["Combat: wall court", "combat_court"],
 	["Test colossus", "colossus_arena"],
+	["Cellar: candy trap", "cellar_candy"],
+	["Cellar: last call (bridge)", "cellar_bridge"],
+	["Cellar: raft", "cellar_raft"],
+	["Cellar: fire door", "cellar_fire"],
 ]
 const SHOWN := 12 ## rows the menu shows at once
 const ACTIONS := ["Give every item", "God mode", "Heal", "Shrink / grow"]

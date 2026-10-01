@@ -265,5 +265,6 @@ func _build() -> void:
 	Challenge.build(self)
 	Colossus.build(self)
 	CombatYard.build(self)
+	Cellar.build(self)
 	add_child(Power.new())
 	marks["targets"] = Vector3(-2, 0.6, 5)

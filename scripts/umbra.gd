@@ -170,6 +170,8 @@ func mirrored(v: Vector3) -> Vector3:
 	return v - 2.0 * mirror * v.dot(mirror)
 
 func _physics_process(dt: float) -> void:
+	if Liquids.frozen_step(self, dt): # rock candy: it stops mirroring you
+		return
 	_t += dt
 	lit = Lighting.is_lit(global_position, self, [get_rid()])
 	var wish := mirrored(player.last_wish)
@@ -184,6 +186,7 @@ func _physics_process(dt: float) -> void:
 		velocity.y -= t.gravity * dt
 	else:
 		velocity.y = 0.0 # floats: holds whatever height it has
+	Liquids.creature_after(self) # stuck in honey, it stops mirroring you
 	move_and_slide()
 	if is_on_floor():
 		falling = false

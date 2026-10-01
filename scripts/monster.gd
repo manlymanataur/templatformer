@@ -13,6 +13,8 @@ extends CharacterBody3D
 ## shield surf onto it pogos you off.
 ## Hits from the poleaxe go through strike(), which knows the move: sweet spots, counters (hit in its windup),
 ## whiff punishes (hit while it recovers from a miss), launches and juggles, spikes, splats and bowling.
+## Liquids: honey draws blobs and wolves and holds them (bigger kinds are slowed), wine draws brutes and rushers
+## and makes anything drunk (it wanders, and stops avoiding ledges), heat hardens honey into rock candy.
 
 const AGGRO := 9.0
 const SPEED := 3.2
@@ -179,6 +181,8 @@ func _face(dir: Vector3) -> void:
 func _physics_process(dt: float) -> void:
 	var world := Hitfx.world
 	dt *= world # a perfect dodge slows monsters down
+	if Liquids.frozen_step(self, dt): # rock candy (and liquids under it: see Liquids)
+		return
 	_t += dt
 	knocked_t -= dt
 	open_t -= dt
@@ -197,8 +201,9 @@ func _physics_process(dt: float) -> void:
 		_mat.albedo_color = Color(1, 0.3, 0.3) if stun > 0.3 else _base
 		if open_t > 0.0:
 			_mat.albedo_color = Color(1.0, 0.85, 0.3)
-	else:
+	elif not Liquids.monster_think(self, dt, p): # drunk, or drawn to honey or wine
 		_think(dt, p)
+	Liquids.monster_after(self) # honey holds it; sober, it won't walk off a ledge
 	var before := velocity
 	velocity *= world
 	move_and_slide()

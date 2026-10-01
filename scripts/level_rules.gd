@@ -25,6 +25,7 @@ const AREAS := {
 	"Rootworks": AABB(Vector3(34, -4, 53), Vector3(52, 24, 61)), # the ramp foot is left out: it runs by the arena
 	"Moves yard": AABB(Vector3(-26, -4, -120), Vector3(52, 16, 56)),
 	"Combat yard": AABB(Vector3(-118, -4, -66), Vector3(62, 14, 54)),
+	"Cellar": AABB(Vector3(134, -6, -152), Vector3(40, 13.5, 52)), # stops under the 8 m roof
 }
 
 class Grid:
