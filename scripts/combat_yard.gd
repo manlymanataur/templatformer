@@ -91,3 +91,4 @@ static func build(lv: Node3D) -> void:
 		["brute", false, Vector3(-80, 0.6, -54)], ["archer", false, Vector3(-62, 0.6, -46)]])
 	lv.label(Vector3(-72, 5.5, -62), "brace (guard, stand still) against the rusher, or let it hit the wall", 32)
 	marks["combat_court"] = Vector3(-72, 0.6, -55)
+	SpiderPens.build(lv) # the spider & lash pens, south of the yard

@@ -25,6 +25,7 @@ const AREAS := {
 	"Rootworks": AABB(Vector3(34, -4, 53), Vector3(52, 24, 61)), # the ramp foot is left out: it runs by the arena
 	"Moves yard": AABB(Vector3(-26, -4, -120), Vector3(52, 16, 56)),
 	"Combat yard": AABB(Vector3(-118, -4, -66), Vector3(62, 14, 54)),
+	"Spider & lash pens": AABB(Vector3(-116, -4, -2), Vector3(56, 14, 26)),
 	# the Works, less its iron room (x 172..202, z -44..-14): that pit is for iron, 2 m wide on purpose
 	"Works": AABB(Vector3(202, -6, -44), Vector3(66, 16, 60)),
 	"Works (screws)": AABB(Vector3(160, -6, -14), Vector3(42, 16, 30)),
