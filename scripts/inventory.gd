@@ -31,6 +31,11 @@ func count(id: String) -> int:
 func has(id: String) -> bool:
 	return count(id) > 0
 
+## Owned and on a quick slot. Items with a lasting effect (the candle hat, Umbra, the magnet, the spider,
+## the lash) only work while they're on the quick bar: take one off and it switches off (Player._drop_unslotted).
+func equipped(id: String) -> bool:
+	return has(id) and slots.has(id)
+
 func owned() -> Array[String]:
 	var r: Array[String] = []
 	for id in ITEMS:

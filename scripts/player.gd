@@ -100,6 +100,11 @@ var carried_by: Node3D = null ## the spider carrying you overhead (you're carrya
 var grapple_to := Vector3.ZERO ## the lash is pulling you here
 var grapple_t := 0.0
 var climbing: Node3D = null ## the climbable wall or trunk you're on
+var _vault_to := Vector3.ZERO ## pulling yourself over the top of a climb onto this spot (ZERO when not)
+var _vault_t := 0.0
+var _vault_hold := 0.0 ## just vaulted onto a top: a stick still held the way you climbed is ignored (up to this long)
+var _vault_dir := Vector3.ZERO ## the way you climbed
+var _vault_on_trunk := false
 var homing: Node3D = null ## the air attack is flying you at this
 var homing_t := 0.0
 var hang := Vector3.ZERO ## hanging from a ledge: the ledge's top edge point (ZERO when not hanging)
@@ -122,6 +127,7 @@ var _pogo_last: Node3D = null ## what you last bounced off; homing skips it unti
 var _flick: MeshInstance3D
 var _flick_t := 0.0
 var small := false ## shrunk on a shrink pad
+var _last_slots: Array[String] = ["", "", ""] ## the quick slots last frame (_drop_unslotted)
 var magnet_flying := false ## small, and the magnet is carrying you along an iron's line
 var _col: CollisionShape3D
 const RADIUS := 0.5
@@ -302,6 +308,31 @@ func item_active(id: String) -> bool:
 			return leash != null
 	return false
 
+## Items only stay on while they're on the quick bar (jovi): one moved off the three slots switches off.
+## (Watches the slots change, so a hat lit some other way, by a pin or a test, isn't put out.)
+func _drop_unslotted() -> void:
+	var now := inventory.slots
+	for id in _last_slots:
+		if id != "" and not now.has(id):
+			match id:
+				"candle":
+					if candle_lit:
+						set_candle(false)
+				"umbra":
+					if umbra != null:
+						umbra.fade()
+				"spider":
+					if pilot != null:
+						pilot.let_go()
+						pilot = null
+				"lash":
+					if leash != null and is_instance_valid(leash):
+						leash.queue_free()
+					leash = null
+				"magnet":
+					magnet_flying = false
+	_last_slots = now.duplicate()
+
 # light source (see Lighting)
 func is_shining() -> bool:
 	return candle_lit
@@ -319,6 +350,7 @@ func teleport(pos: Vector3) -> void:
 	global_position = pos
 	velocity = Vector3.ZERO
 	up_direction = Vector3.UP
+	_vault_to = Vector3.ZERO
 	platform_on_leave = CharacterBody3D.PLATFORM_ON_LEAVE_DO_NOTHING
 	_teleported = 2
 
@@ -358,6 +390,7 @@ func drop_holds() -> void:
 	_end_carried()
 	grapple_t = 0.0
 	climbing = null
+	_vault_to = Vector3.ZERO
 	homing = null
 	hang = Vector3.ZERO
 	rail = null
@@ -699,6 +732,7 @@ func _physics_process(dt: float) -> void:
 			respawn()
 	_flick_t -= dt
 	_flick.visible = _flick_t > 0.0
+	_drop_unslotted()
 	Hitfx.tick(dt, t)
 	_rail_cool = maxf(_rail_cool - dt, 0.0)
 	if is_on_floor():
@@ -799,7 +833,7 @@ func _physics_process(dt: float) -> void:
 		_roll_wish = Vector3.ZERO
 
 	var water := _water()
-	var fly := _magnet_line() if small and inventory.has("magnet") else Vector3.ZERO
+	var fly := _magnet_line() if small and inventory.equipped("magnet") else Vector3.ZERO
 	magnet_flying = fly != Vector3.ZERO
 	if not on_floor and guarding() and velocity.y < 0.0 and homing == null:
 		_surf_pogo()
@@ -838,6 +872,9 @@ func _physics_process(dt: float) -> void:
 	# running fast up a slope, a light snap lets you fly off its top edge instead of being pulled over it
 	floor_snap_length = 0.1 if on_floor and velocity.y > 3.0 else 0.7
 	Liquids.player_drag(self) # honey
+	if on_floor and flash_t <= 0.0 and homing == null and pound_t < 0.0 and rail == null and grapple_t <= 0.0 \
+			and hang == Vector3.ZERO and climbing == null and not magnet_flying and velocity.dot(up_direction) < 1.0:
+		StepUp.try(self, dt, t.step_height * (t.small_scale if small else 1.0), radius()) # walk over bumps
 	move_and_slide()
 	_touch_after_move()
 	if _teleported > 0:
@@ -877,6 +914,13 @@ func _read_tap(dt: float, wish: Vector3) -> void:
 
 func _ground_step(dt: float, wish: Vector3) -> void:
 	coyote = t.coyote_time
+	if _vault_hold > 0.0:
+		# still holding the stick the way you climbed: stay on top until you let go or steer another way
+		_vault_hold -= dt
+		if wish.dot(_vault_dir) > 0.5:
+			wish = Vector3.ZERO
+		else:
+			_vault_hold = 0.0
 	var n := get_floor_normal()
 	if n == Vector3.ZERO: # the very first frame can report a floor without its normal
 		n = Vector3.UP
@@ -1229,6 +1273,8 @@ func _grapple_step(dt: float) -> void:
 ## Returns true while climbing.
 func _climb_step(wish: Vector3, jump_pressed: bool) -> bool:
 	climbing = null
+	if _vault_to != Vector3.ZERO:
+		return _vault_step()
 	if carrying != null or small or wish.length() < 0.3: # a seed overhead doesn't stop you (jovi), a lit bomb does
 		return false
 	var space := get_world_3d().direct_space_state
@@ -1255,10 +1301,53 @@ func _climb_step(wish: Vector3, jump_pressed: bool) -> bool:
 	# at the top: nothing climbable in front of your head any more, so pull up and over
 	var head := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.9, global_position + Vector3.UP * 0.9 - n * (radius() + 0.6), 1, [get_rid()])
 	if space.intersect_ray(head).is_empty():
-		velocity = -n * 3.0 + Vector3.UP * 7.0
+		if not _start_vault(n, climbing):
+			velocity = -n * 3.0 + Vector3.UP * 7.0
 		return true
 	var side := wish - (-n) * into
 	velocity = Vector3.UP * t.climb_speed * into + side * t.climb_speed - n * 1.0
+	return true
+
+## At the top of a climb: find the top surface over the edge (a trunk's middle, or just past a wall's edge) and
+## pull yourself onto it (_vault_step). False if there's nowhere to stand.
+func _start_vault(n: Vector3, on: Node3D) -> bool:
+	var over := global_position - n * (radius() + 1.0)
+	if on != null and on.is_in_group("trunks"):
+		over = Vector3(on.global_position.x, global_position.y, on.global_position.z) # its middle
+	var space := get_world_3d().direct_space_state
+	var q := PhysicsRayQueryParameters3D.create(over + Vector3.UP * 1.6, over + Vector3.DOWN * 0.6, 1 | 1 << 4, [get_rid()])
+	var hit := space.intersect_ray(q)
+	if hit.is_empty() or (hit["normal"] as Vector3).y < 0.7:
+		return false
+	var top: Vector3 = hit["position"]
+	var room := PhysicsRayQueryParameters3D.create(top + Vector3.UP * 0.05, top + Vector3.UP * (radius() * 2.0 + 0.1), 1, [get_rid()])
+	if not space.intersect_ray(room).is_empty():
+		return false
+	_vault_to = top + Vector3.UP * (radius() + 0.05)
+	_vault_t = 0.0
+	_vault_dir = -n
+	_vault_on_trunk = on != null and on.is_in_group("trunks")
+	return true
+
+## Vaulting over the top of a climb: straight up until you're clear of the top, then across onto it, then a
+## stick still held into the climb doesn't walk you on (off a trunk's far side) until you let go or steer elsewhere.
+func _vault_step() -> bool:
+	_vault_t += get_physics_process_delta_time()
+	if _vault_t > 0.8:
+		_vault_to = Vector3.ZERO # something's in the way: give up
+		return false
+	if global_position.y < _vault_to.y:
+		velocity = Vector3.UP * 9.0
+		return true
+	var d := Vector3(_vault_to.x - global_position.x, 0, _vault_to.z - global_position.z)
+	if d.length() > 0.12:
+		velocity = d.normalized() * minf(7.0, d.length() * 60.0)
+		velocity.y = 0.0
+		return true
+	velocity = Vector3.ZERO
+	_vault_to = Vector3.ZERO
+	_vault_hold = 2.0 if _vault_on_trunk else 0.0 # a wall's top has room to walk on; a trunk's doesn't
+	jump_chain = 0
 	return true
 
 ## Falling against a wall whose top is within ledge_reach above your middle: catch the edge and hang there.

@@ -1,8 +1,9 @@
 class_name Poleaxe
 extends Node3D
 ## The poleaxe: one attack button, and what you're doing picks which of its three heads you use.
-##   Point (the spike on top): standing or walking, attack is a thrust, thrust, then a blade sweep that
-##     launches. The tip is the sweet spot: hit with the last stretch of its reach (TIP_FROM) for double.
+##   Point (the spike on top): standing or walking, attack is a thrust, a second thrust that launches (jovi
+##     wanted launching easier: it used to take all three hits), then a blade sweep that launches too.
+##     The tip is the sweet spot: hit with the last stretch of its reach (TIP_FROM) for double.
 ##   Blade (the axe): the sweep (its edge is the sweet spot: EDGE_FROM out, +1), the running blade (attack while
 ##     running faster than run_attack_speed; it keeps your speed, knocks back by it, and does +1 above
 ##     fast_blade_speed, which only downhills reach), the air slash and the spin.
@@ -29,7 +30,7 @@ const HAMMER_BAND := Vector2(1.4, 2.6) * REACH ## a hammer hit in this band land
 ## doesn't grow with REACH.
 const MOVES := {
 	"thrust": {"dur": 0.3, "from": 0.08, "to": 0.18, "dmg": 1, "head": "point", "box": Vector3(0.9, 1.3, 2.8) * REACH, "fwd": 1.7 * REACH, "knock": 6.0},
-	"thrust2": {"dur": 0.3, "from": 0.08, "to": 0.18, "dmg": 1, "head": "point", "box": Vector3(0.9, 1.3, 2.8) * REACH, "fwd": 1.7 * REACH, "knock": 6.0},
+	"thrust2": {"dur": 0.3, "from": 0.08, "to": 0.18, "dmg": 1, "head": "point", "box": Vector3(0.9, 1.3, 2.8) * REACH, "fwd": 1.7 * REACH, "knock": 6.0, "launch": true},
 	"sweep": {"dur": 0.44, "from": 0.12, "to": 0.28, "dmg": 2, "head": "blade", "box": Vector3(3.6, 1.3, 2.6) * REACH, "fwd": 1.4 * REACH, "knock": 5.0, "launch": true},
 	"run": {"dur": 0.4, "from": 0.06, "to": 0.28, "dmg": 2, "head": "blade", "box": Vector3(3.0, 1.3, 2.8) * REACH, "fwd": 1.5 * REACH, "knock": 8.0},
 	"hammer": {"dur": 0.42, "from": 0.06, "to": 0.2, "dmg": 2, "head": "hammer", "box": Vector3(1.6, 2.2, 2.6) * REACH, "fwd": 1.8 * REACH, "knock": 13.0, "stagger": true, "spike": true},
@@ -296,5 +297,5 @@ func strike(c: Node, def: Dictionary) -> int:
 	if not c.has_method("strike"):
 		c.hurt(dmg, player.global_position)
 		return dmg
-	return c.strike(dmg, player.global_position, {"head": head, "knock": knock, "launch": def.get("launch", false) and not air,
+	return c.strike(dmg, player.global_position, {"head": head, "knock": knock, "launch": def.get("launch", false) and not air, "lift": player.t.launch_up,
 		"spike": def.get("spike", false), "stagger": stagger, "air": air, "sweet": sweet})
