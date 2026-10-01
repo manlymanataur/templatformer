@@ -7,6 +7,8 @@ extends AnimatableBody3D
 ## next to you; push (positive) drives it away until something blocks it. Iron carries power (see Power).
 ## Pushed off an edge, it drops; if it falls into a pit it goes back to where it started.
 ## While you're small the iron is too heavy for you to budge: it moves you instead (see Player._magnet_line).
+## Powers book: monsters don't stop it. A sliding block ploughs the monster in its way (_plough), knocking it
+## on at t.iron_plough_knock, so pinning one between iron and a wall splats it.
 
 const CELL := 2.0
 const H := 4.5
@@ -18,6 +20,7 @@ var _k := 0.0
 var _fall := 0.0
 var _mat: StandardMaterial3D
 var home := Vector3.ZERO
+var _ploughed: Array = [] ## monsters this step already knocked
 
 static func make(parent: Node3D, pos: Vector3) -> IronCube:
 	var c := IronCube.new()
@@ -59,6 +62,7 @@ func _physics_process(dt: float) -> void:
 		var t: Tuning = _player().t if _player() != null else null
 		_k += dt * (t.iron_speed if t != null else 6.0) / CELL
 		global_position = _from.lerp(_to, minf(_k, 1.0))
+		_plough((_to - _from).normalized())
 		if _k >= 1.0:
 			_moving = false
 		return
@@ -87,6 +91,7 @@ func _physics_process(dt: float) -> void:
 		_to = dest
 		_k = 0.0
 		_moving = true
+		_ploughed.clear()
 
 func _player() -> Player:
 	var ps := get_tree().get_nodes_in_group("player")
@@ -118,7 +123,27 @@ func _free(dest: Vector3) -> bool:
 	q.transform = Transform3D(Basis(), dest + Vector3.UP * (H / 2.0 + 0.05))
 	q.exclude = [get_rid()]
 	q.collision_mask = 1 | 1 << 1 | 1 << 2 # walls, bars and grates stop iron
-	return get_world_3d().direct_space_state.intersect_shape(q, 1).is_empty()
+	for r in get_world_3d().direct_space_state.intersect_shape(q, 8):
+		if not (r["collider"] is Monster): # monsters don't: it ploughs them (_plough)
+			return false
+	return true
+
+## Knock any monster at the block's leading face along dir.
+func _plough(dir: Vector3) -> void:
+	var p := _player()
+	if p == null:
+		return
+	var q := PhysicsShapeQueryParameters3D.new()
+	var s := BoxShape3D.new()
+	s.size = Vector3(0.8, H - 0.4, 1.9) if absf(dir.x) > 0.5 else Vector3(1.9, H - 0.4, 0.8) # a slab at the leading face
+	q.shape = s
+	q.transform = Transform3D(Basis(), global_position + dir * 1.3 + Vector3.UP * (H / 2.0))
+	q.exclude = [get_rid()]
+	for r in get_world_3d().direct_space_state.intersect_shape(q, 8):
+		var m = r["collider"]
+		if m is Monster and not _ploughed.has(m):
+			_ploughed.append(m)
+			(m as Monster).strike(1, (m as Monster).global_position - dir, {"knock": p.t.iron_plough_knock, "stagger": true, "above": true})
 
 func _grounded() -> bool:
 	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.2, global_position + Vector3.DOWN * 0.1, 1, [get_rid()])

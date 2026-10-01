@@ -47,9 +47,7 @@ static func build(lv: Node3D) -> void:
 	# Room A
 	Burnable.make(lv, "vines", Vector3(-2, FLOOR, 65), Vector3(20, ROOF - FLOOR, 0.6))
 	lv.label(Vector3(0, FLOOR + 3, 63), "wear the hat (put it on a quick slot)", 28)
-	for gx in 4:
-		for gz in 3:
-			Burnable.make(lv, "grass", Vector3(-3 + gx * 2, FLOOR, 68 + gz * 2), Vector3(2, 0.3, 2))
+	Burnable.field(lv, Vector3(-4, FLOOR, 67), 8, 6) # 1 m patches: the fire visibly walks across
 	var brazier_a := Brazier.make(lv, Vector3(5, FLOOR, 72))
 	IceBlock.make(lv, Vector3(5, FLOOR, 72), Vector3(2.2, 2, 2.2))
 	var gate_a := _cross_wall(rect, 76, 0, 4, true)
