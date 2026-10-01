@@ -1,7 +1,7 @@
 class_name Works
 extends RefCounted
-## The Works: Winch's machinery and two Lodestone rules, east of the map's edge (x 120..194, z -44..16, plus a
-## far island at x 208..216). The magnet, the lash and the clockwork spider lie at the west entrance.
+## The Works: Winch's machinery and two Lodestone rules, east of the Powers yard (x 159..244, z -44..16, plus a
+## far island at x 258..266). The magnet, the lash and the clockwork spider lie at the west entrance.
 ## Iron room (north-west, its own 2 m grid, see cell()): a 2 m pit, as deep as iron is tall, sits in the row
 ##   that leads to the battery by the door. Push the near iron north into the pit: it fills it flush and is
 ##   floor. Push the far iron west over it until the battery stops it: it powers the door. Walk in, stand on
@@ -20,12 +20,12 @@ extends RefCounted
 ##   the wrong way (against its stop), so nothing moves; wind the crank to slide the clutch over and two gears
 ##   in a row turn it the right way.
 
-const X0 := 124.0 ## iron room grid
+const X0 := 174.0 ## iron room grid
 const Z0 := -42.0
 const STONE := Color(0.5, 0.48, 0.45)
 const WALL := Color(0.42, 0.4, 0.38)
-const HOLES := [Rect2(134, -30, 2, 2), Rect2(158, -30, 14, 6)] ## the iron pit and the ferry pit
-const SLAB := Rect2(120, -44, 74, 60)
+const HOLES := [Rect2(184, -30, 2, 2), Rect2(208, -30, 14, 6)] ## the iron pit and the ferry pit
+const SLAB := Rect2(159, -44, 85, 60)
 
 ## Ground-level centre of iron room cell (i, j).
 static func cell(i: int, j: int) -> Vector3:
@@ -40,11 +40,11 @@ static func build(lv: Node3D) -> void:
 	ScaleGarden.basin(lv, HOLES[0], -IronCube.H)
 	ScaleGarden.basin(lv, HOLES[1], -2.0)
 
-	lv.label(Vector3(124, 4, 8), "The Works")
-	Pickup.spawn(lv, "magnet", 1, Vector3(124, 0.8, 10))
-	Pickup.spawn(lv, "lash", 1, Vector3(126, 0.8, 10))
-	Pickup.spawn(lv, "spider", 1, Vector3(128, 0.8, 10))
-	marks["works_start"] = Vector3(122, 0.6, 8)
+	lv.label(Vector3(174, 4, 8), "The Works")
+	Pickup.spawn(lv, "magnet", 1, Vector3(174, 0.8, 10))
+	Pickup.spawn(lv, "lash", 1, Vector3(176, 0.8, 10))
+	Pickup.spawn(lv, "spider", 1, Vector3(178, 0.8, 10))
+	marks["works_start"] = Vector3(172, 0.6, 8)
 
 	_iron_room(lv, rect)
 	_ferry(lv, rect)
@@ -112,8 +112,8 @@ static func _iron_room(lv: Node3D, rect: Callable) -> void:
 	door.wire()
 	Battery.make(lv, cell(2, 6))
 	# inside: the pillar with the heart, the dead pad and its battery
-	rect.call(126, 130, -40, -36, 0, 6, Color(0.5, 0.8, 0.8))
-	Pickup.spawn(lv, "heart", 1, Vector3(128, 6.8, -38))
+	rect.call(176, 180, -40, -36, 0, 6, Color(0.5, 0.8, 0.8))
+	Pickup.spawn(lv, "heart", 1, Vector3(178, 6.8, -38))
 	var pad := Pad.make(lv, "launch", cell(3, 1), Vector3(-3.4, 20, 1.1), Vector3(2, 1, 2), true)
 	Battery.make(lv, cell(4, 2))
 	# the pit, and the two irons
@@ -136,24 +136,24 @@ static func _ferry(lv: Node3D, rect: Callable) -> void:
 	var marks: Dictionary = lv.marks
 	var t: Tuning = lv.t
 	# corridor z -30..-24 from x 154 to the end wall at 177; the pit is x 158..172
-	rect.call(154, 173.5, -31, -30, 0, 4, WALL)
-	rect.call(175.5, 178, -31, -30, 0, 4, WALL)
-	rect.call(154, 178, -24, -23, 0, 4, WALL)
-	rect.call(177, 178, -30, -24, 0, 4, WALL)
+	rect.call(204, 223.5, -31, -30, 0, 4, WALL)
+	rect.call(225.5, 228, -31, -30, 0, 4, WALL)
+	rect.call(204, 228, -24, -23, 0, 4, WALL)
+	rect.call(227, 228, -30, -24, 0, 4, WALL)
 	# the nook behind the gate, walled high
-	rect.call(171.5, 173.5, -36, -31, 0, 6, WALL)
-	rect.call(175.5, 177.5, -36, -31, 0, 6, WALL)
-	rect.call(171.5, 177.5, -37, -36, 0, 6, WALL)
-	Pickup.spawn(lv, "heart", 1, Vector3(174.5, 0.8, -33.5))
-	var gate := Gate.make(lv, Vector3(174.5, 2, -30.5), Vector3(2, 4, 1), Color(0.6, 0.45, 0.25))
-	var far_gear := Gear.make(lv, Vector3(174.5, 0, -27), 1.0, gate, Vector3.UP * 4.0, t)
+	rect.call(221.5, 223.5, -36, -31, 0, 6, WALL)
+	rect.call(225.5, 227.5, -36, -31, 0, 6, WALL)
+	rect.call(221.5, 227.5, -37, -36, 0, 6, WALL)
+	Pickup.spawn(lv, "heart", 1, Vector3(224.5, 0.8, -33.5))
+	var gate := Gate.make(lv, Vector3(224.5, 2, -30.5), Vector3(2, 4, 1), Color(0.6, 0.45, 0.25))
+	var far_gear := Gear.make(lv, Vector3(224.5, 0, -27), 1.0, gate, Vector3.UP * 4.0, t)
 	# the deck: a rack that fills the corridor's width, flush with the banks, with a crank gear riding it
-	var deck := Rack.make(lv, Vector3(161, 0, -27), Vector3.RIGHT, 6.0, 5.9, 8.0)
-	var crank := Gear.cog(lv, Vector3(161, 0, -27), 1.0, t)
+	var deck := Rack.make(lv, Vector3(211, 0, -27), Vector3.RIGHT, 6.0, 5.9, 8.0)
+	var crank := Gear.cog(lv, Vector3(211, 0, -27), 1.0, t)
 	deck.riders.append(crank)
 	Machinery.link(crank, deck, t.crank_ratio)
-	lv.label(Vector3(156, 3.5, -27), "walk the spider round the deck's crank: the rack carries it across", 32)
-	marks["works_ferry"] = Vector3(155.5, 0.6, -27)
+	lv.label(Vector3(206, 3.5, -27), "walk the spider round the deck's crank: the rack carries it across", 32)
+	marks["works_ferry"] = Vector3(205.5, 0.6, -27)
 	marks["works_deck"] = deck
 	marks["works_crank"] = crank
 	marks["works_ferry_gear"] = far_gear
@@ -163,24 +163,24 @@ static func _arm(lv: Node3D, _rect: Callable) -> void:
 	var marks: Dictionary = lv.marks
 	var t: Tuning = lv.t
 	# the slab ends at x 194: a 14 m chasm, then the island
-	lv.box(Vector3(212, -0.5, -20), Vector3(8, 1, 16), Basis(), STONE)
-	Pickup.spawn(lv, "heart", 1, Vector3(212, 0.8, -20))
-	ShadowHall.pit(lv, Vector3(201, -12, -14), Vector3(14, 2, 64), Vector3(190, 0.6, -24))
-	var arm := ArmGear.make_arm(lv, Vector3(192.8, 0, -20), 1.0, Vector3.BACK, 17.0, 3.0, t)
-	lv.label(Vector3(190, 3.5, -24), "the spider turns the arm gear: a notch swings the bridge a quarter turn", 32)
+	lv.box(Vector3(262, -0.5, -20), Vector3(8, 1, 16), Basis(), STONE)
+	Pickup.spawn(lv, "heart", 1, Vector3(262, 0.8, -20))
+	ShadowHall.pit(lv, Vector3(251, -12, -14), Vector3(14, 2, 64), Vector3(240, 0.6, -24))
+	var arm := ArmGear.make_arm(lv, Vector3(242.8, 0, -20), 1.0, Vector3.BACK, 17.0, 3.0, t)
+	lv.label(Vector3(240, 3.5, -24), "the spider turns the arm gear: a notch swings the bridge a quarter turn", 32)
 	marks["works_arm"] = arm
-	marks["works_arm_stand"] = Vector3(189, 0.6, -24)
-	marks["works_island_x"] = 208.0
+	marks["works_arm_stand"] = Vector3(239, 0.6, -24)
+	marks["works_island_x"] = 258.0
 
 static func _screws(lv: Node3D, rect: Callable) -> void:
 	var marks: Dictionary = lv.marks
 	var t: Tuning = lv.t
-	rect.call(130, 146, -12, -4, 0, 6, STONE)
-	Pickup.spawn(lv, "heart", 1, Vector3(138, 6.8, -8))
-	var high := Screw.make_screw(lv, Vector3(138, 0, -2.5), 1.5, t.screw_notch, 4, 0, t)
-	var low := Screw.make_screw(lv, Vector3(138, 0, 1.5), 1.5, t.screw_notch, 2, 0, t)
-	lv.label(Vector3(138, 3.0, 5), "screws: the spider winds them up a notch at a time", 32)
-	marks["works_screws"] = Vector3(134, 0.6, 4)
+	rect.call(180, 196, -12, -4, 0, 6, STONE)
+	Pickup.spawn(lv, "heart", 1, Vector3(188, 6.8, -8))
+	var high := Screw.make_screw(lv, Vector3(188, 0, -2.5), 1.5, t.screw_notch, 4, 0, t)
+	var low := Screw.make_screw(lv, Vector3(188, 0, 1.5), 1.5, t.screw_notch, 2, 0, t)
+	lv.label(Vector3(188, 3.0, 5), "screws: the spider winds them up a notch at a time", 32)
+	marks["works_screws"] = Vector3(184, 0.6, 4)
 	marks["works_screw_low"] = low
 	marks["works_screw_high"] = high
 	marks["works_ledge_y"] = 6.0
@@ -189,27 +189,27 @@ static func _train(lv: Node3D, rect: Callable) -> void:
 	var marks: Dictionary = lv.marks
 	var t: Tuning = lv.t
 	# the gate's room: x 171..177, z -6..0, the gate in its west wall
-	rect.call(170, 171, -7, -4, 0, 6, WALL)
-	rect.call(170, 171, -2, 1, 0, 6, WALL)
-	rect.call(177, 178, -7, 1, 0, 6, WALL)
-	rect.call(171, 177, -7, -6, 0, 6, WALL)
-	rect.call(171, 177, 0, 1, 0, 6, WALL)
-	Pickup.spawn(lv, "heart", 1, Vector3(174, 0.8, -3))
-	var gate := Gate.make(lv, Vector3(170.5, 2, -3), Vector3(1, 4, 2), Color(0.6, 0.45, 0.25))
-	var input := Gear.cog(lv, Vector3(160, 0, 2), 1.0, t)
-	var lock := Screw.make_screw(lv, Vector3(158, 0, 2), 1.0, 0.5, 6, 0, t)
-	var out := Gear.make(lv, Vector3(164, 0, 2), 1.0, gate, Vector3.UP * 4.0, t)
+	rect.call(220, 221, -7, -4, 0, 6, WALL)
+	rect.call(220, 221, -2, 1, 0, 6, WALL)
+	rect.call(227, 228, -7, 1, 0, 6, WALL)
+	rect.call(221, 227, -7, -6, 0, 6, WALL)
+	rect.call(221, 227, 0, 1, 0, 6, WALL)
+	Pickup.spawn(lv, "heart", 1, Vector3(224, 0.8, -3))
+	var gate := Gate.make(lv, Vector3(220.5, 2, -3), Vector3(1, 4, 2), Color(0.6, 0.45, 0.25))
+	var input := Gear.cog(lv, Vector3(210, 0, 2), 1.0, t)
+	var lock := Screw.make_screw(lv, Vector3(208, 0, 2), 1.0, 0.5, 6, 0, t)
+	var out := Gear.make(lv, Vector3(214, 0, 2), 1.0, gate, Vector3.UP * 4.0, t)
 	# the clutch: a rack running south carrying one gear between input and output, and two more north of them.
 	# Slid 2.27 m (a crank on the east side drives it), the pair bridges input and output instead.
-	var clutch := Rack.make(lv, Vector3(162, 0.03, 0), Vector3.BACK, 6.0, 1.0, 4.0 - sqrt(3.0))
-	for at in [Vector3(162, 0, 2), Vector3(161, 0, -2), Vector3(163, 0, -2)]:
+	var clutch := Rack.make(lv, Vector3(212, 0.03, 0), Vector3.BACK, 6.0, 1.0, 4.0 - sqrt(3.0))
+	for at in [Vector3(212, 0, 2), Vector3(211, 0, -2), Vector3(213, 0, -2)]:
 		var g := Gear.cog(lv, at, 1.0, t)
 		clutch.riders.append(g)
-	var crank := Gear.cog(lv, Vector3(168, 0, 8), 1.0, t)
+	var crank := Gear.cog(lv, Vector3(218, 0, 8), 1.0, t)
 	Machinery.link(crank, clutch, t.crank_ratio)
-	lv.label(Vector3(162, 3.5, 6), "meshed gears turn opposite ways: count the gears between", 32)
-	lv.label(Vector3(168, 2.5, 8), "clutch crank", 32)
-	marks["works_train"] = Vector3(160, 0.6, 7)
+	lv.label(Vector3(212, 3.5, 6), "meshed gears turn opposite ways: count the gears between", 32)
+	lv.label(Vector3(218, 2.5, 8), "clutch crank", 32)
+	marks["works_train"] = Vector3(210, 0.6, 7)
 	marks["works_train_in"] = input
 	marks["works_train_out"] = out
 	marks["works_train_lock"] = lock

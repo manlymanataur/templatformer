@@ -32,6 +32,8 @@ const WARPS := [
 	["Rootworks: lash ledge", "root_c_stand"],
 	["Rootworks: lash post", "root_post_stand"],
 	["Rootworks: gear room", "root_gear_room"],
+	["Rootworks: spider cage", "root_cage_stand"],
+	["Rootworks: vine shelf", "root_vine"],
 	["Moves: climb tower", "moves_climb"],
 	["Moves: grind rail", "moves_rail"],
 	["Moves: pogo spikes", "moves_pogo"],
@@ -48,6 +50,10 @@ const WARPS := [
 	["Works: arm bridge", "works_arm_stand"],
 	["Works: screws", "works_screws"],
 	["Works: gear train", "works_train"],
+	["Powers: shade twin", "power_twin"],
+	["Powers: iron knights", "power_iron"],
+	["Powers: grass fire", "power_fire"],
+	["Powers: bomb flowers", "power_bombs"],
 ]
 const SHOWN := 12 ## rows the menu shows at once
 const ACTIONS := ["Give every item", "God mode", "Heal", "Shrink / grow"]

@@ -93,6 +93,7 @@ var spider: Spider = null ## the clockwork spider, once it's out of your pack
 var pilot: Spider = null ## the spider you're steering; you sit still meanwhile
 var leash: Tether = null ## the lash hooked on the spider
 var held_seed: Seed = null
+var carried_by: Node3D = null ## the spider carrying you overhead (you're carryable while you steer it)
 var grapple_to := Vector3.ZERO ## the lash is pulling you here
 var grapple_t := 0.0
 var climbing: Node3D = null ## the climbable wall or trunk you're on
@@ -125,6 +126,7 @@ const RADIUS := 0.5
 func _ready() -> void:
 	add_to_group("player")
 	add_to_group("hurtable")
+	add_to_group("carryable") # the spider can carry you while you steer it
 	floor_max_angle = deg_to_rad(55)
 	floor_snap_length = 0.7
 	floor_stop_on_slope = false
@@ -342,6 +344,9 @@ func drop_holds() -> void:
 	if pilot != null:
 		pilot.let_go()
 		pilot = null
+	if carried_by != null and is_instance_valid(carried_by) and carried_by.has_method("_drop_shape"):
+		carried_by._drop_shape()
+	_end_carried()
 	grapple_t = 0.0
 	climbing = null
 	homing = null
@@ -435,6 +440,14 @@ func _show_flick(a: Vector3, b: Vector3) -> void:
 func release_seed() -> void:
 	var sd := held_seed
 	var f := _flat_facing()
+	if climbing != null:
+		# on a vine or trunk: let go and it drops straight down behind you (from spear_drop up onto mud, it spears in)
+		var behind := global_position - f * (radius() + Seed.HALF + 0.15) + Vector3.UP * (Seed.HALF - radius() + 0.05)
+		if not _room_for_cube(behind):
+			return
+		held_seed = null
+		sd.set_down(behind)
+		return
 	var front := global_position + f * (radius() + Seed.HALF + 0.1) + Vector3.UP * (Seed.HALF - radius() + 0.05)
 	var moving := _wish().length() > 0.2 or flat_speed() > 2.0
 	var room := _room_for_cube(front)
@@ -448,7 +461,7 @@ func release_seed() -> void:
 			return
 	if moving:
 		sd.set_down(global_position + Vector3.UP * (radius() + Seed.HALF + 0.1))
-		sd.throw(f * t.bomb_throw_speed + Vector3.UP * t.bomb_throw_up + Vector3(velocity.x, 0, velocity.z) * 0.3)
+		sd.throw(f * t.seed_throw_speed + Vector3.UP * t.seed_throw_up + Vector3(velocity.x, 0, velocity.z) * 0.3)
 
 func _room_for_cube(at: Vector3) -> bool:
 	var q := PhysicsShapeQueryParameters3D.new()
@@ -483,12 +496,12 @@ func _next_to_cube(d: Vector3) -> bool:
 ## plants on soil, mud or roots). Otherwise you pick up a seed or the spider, or pull a bomb off a plant.
 ## (The ground pound is the air attack without lock-on, not this button.)
 func context() -> void:
-	if held_seed != null:
+	if pilot != null:
+		pilot.context() # steering the spider, it's the spider's hands
+	elif held_seed != null:
 		release_seed()
 	elif carrying != null:
 		release_bomb()
-	elif pilot != null:
-		return
 	elif _grab_seed():
 		pass
 	elif _pick_bomb():
@@ -593,7 +606,7 @@ func release_bomb() -> void:
 	var f := _flat_facing()
 	var moving := _wish().length() > 0.2 or flat_speed() > 2.0
 	if moving:
-		carrying.throw(f * t.bomb_throw_speed + Vector3.UP * t.bomb_throw_up + Vector3(velocity.x, 0, velocity.z) * 0.3)
+		carrying.throw(f * t.bomb_throw_speed + Vector3.UP * t.bomb_throw_up + Vector3(velocity.x, 0, velocity.z) * t.bomb_throw_keep)
 	else:
 		carrying.set_down(global_position + f * 1.0 + Vector3.DOWN * 0.2)
 	carrying = null
@@ -666,6 +679,8 @@ func _physics_process(dt: float) -> void:
 		inventory.use(item_pressed, self)
 	if context_pressed:
 		context()
+	if carried_by != null and _carried_step():
+		return
 	if carrying != null and attack_pressed:
 		release_bomb()
 	elif held_seed != null:
@@ -1166,7 +1181,7 @@ func _grapple_step(dt: float) -> void:
 ## Returns true while climbing.
 func _climb_step(wish: Vector3, jump_pressed: bool) -> bool:
 	climbing = null
-	if hands_full() or small or wish.length() < 0.3:
+	if carrying != null or small or wish.length() < 0.3: # a seed overhead doesn't stop you (jovi), a lit bomb does
 		return false
 	var space := get_world_3d().direct_space_state
 	var dir := Vector3(wish.x, 0, wish.z).normalized()
@@ -1319,7 +1334,7 @@ func _flash_step() -> void:
 	d.y = 0.0
 	var dist := d.length()
 	flash_t = 0.1
-	velocity = d.normalized() * maxf(dist - 2.6, 0.0) / flash_t
+	velocity = d.normalized() * maxf(dist - (Poleaxe.TIP_FROM + 0.35), 0.0) / flash_t
 	facing = d.normalized()
 	focus_meter = 0.0
 	poleaxe.flash()
@@ -1492,3 +1507,49 @@ func _rail_step(dt: float, jump_pressed: bool) -> void:
 		return
 	global_position = rail.point(rail_s) + Vector3.UP * (radius() + 0.1) - velocity * dt # move_and_slide adds this frame's step
 	facing = Vector3(tan.x, 0, tan.z).normalized() if Vector2(tan.x, tan.z).length() > 0.1 else facing
+
+# --- carried by the spider (Spider.context) ---
+
+## The spider can pick you up while you steer it (you sit still meanwhile).
+func loose() -> bool:
+	return carried_by == null and pilot != null and spider == pilot
+
+func carry_size() -> Vector3:
+	return Vector3.ONE * radius() * 2.0
+
+func hold(by: Node3D) -> void:
+	carried_by = by
+	velocity = Vector3.ZERO
+	_col.set_deferred("disabled", true) # you ride over its back without bumping anything
+
+func set_down(pos: Vector3) -> void:
+	_end_carried()
+	global_position = pos
+	velocity = Vector3.ZERO
+
+func throw(v: Vector3) -> void:
+	_end_carried()
+	velocity = v
+	air_lock = 0.15
+	jumping = false
+
+func _end_carried() -> void:
+	if carried_by == null:
+		return
+	carried_by = null
+	_col.set_deferred("disabled", false)
+
+## Riding the spider: you go where it goes. Steer yourself again (the spider item) and it sets you down.
+## Returns true while you ride.
+func _carried_step() -> bool:
+	if not is_instance_valid(carried_by):
+		_end_carried()
+		return false
+	if pilot == null:
+		if carried_by.has_method("release"):
+			carried_by.release(true)
+		_end_carried()
+		return false
+	global_position = carried_by.global_position + Vector3.UP * (carried_by.radius() + radius() + 0.1)
+	velocity = Vector3.ZERO
+	return true
