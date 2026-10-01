@@ -73,7 +73,7 @@ extends Resource
 @export var gear_ratio := 0.5 ## metres a gear's lift moves per metre of rope sliding past it
 @export var crank_ratio := 0.5 ## a crank geared to a rack (the Works ferry and clutch): metres the rack slides per metre of crank rim
 @export var screw_notch := 1.0 ## metres a step screw (the Works) rises per notch (a quarter turn)
-@export var trunk_height := 8.0 ## a planted seed's trunk grows up to this, or to the ceiling
+@export var trunk_height := 10.0 ## a planted seed's trunk grows up to this, or to the ceiling
 @export var root_length := 18.0 ## roots grow sideways until blocked, up to this
 @export var spear_drop := 3.0 ## a seed falling at least this far onto mud spears in and plants itself
 @export var pound_speed := 30.0 ## ground pound: how fast you drop
@@ -140,6 +140,8 @@ extends Resource
 @export var iron_plough_knock := 12.0 ## a sliding iron block knocks the monster in its way this fast
 @export var fire_spread_delay := 0.45 ## a burning grass patch starts to spread this long after it caught
 @export var fire_damage_every := 0.5 ## monsters standing in fire take 1 this often (you never do)
+@export var step_height := 0.5 ## running into a ledge up to this tall (x small_scale when small) walks you up onto it (StepUp)
+@export var launch_up := 12.0 ## a launcher (the sweep, or thrust2, the combo's second hit) throws a monster up this fast: about 3.6 m
 # spider & lash (jovi, 2026-10-01)
 @export var rope_skip_height := 0.8 ## the rope rides over anything it would clear this much higher: no bends on kerbs and low ledges
 @export var rope_skip_width := 0.4 ## and past anything it clears this far to either side: no bends on poles and twigs
@@ -168,4 +170,5 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", 
 	"knight_pull_speed", "knight_open_time", "knight_push_knock", "knight_magnet_cd", "iron_plough_knock", "fire_spread_delay", "fire_damage_every",
 	"rope_skip_height", "rope_skip_width", "spider_bite_reach", "spider_bite_every", "spider_bite_damage", "spider_pilot_bite", "spider_pilot_bite_time",
 	"spider_bite_lunge", "spider_turn", "spider_turn_daze", "lash_leash", "sling_time", "sling_radius", "sling_spin", "sling_speed", "sling_damage", "yank_speed",
-	"pot_throw_speed", "pot_throw_run", "pot_throw_up", "pot_respawn", "honey_slow", "honey_jump", "honey_cover", "candy_heat_time", "heat_reach", "candle_heat", "swap_range", "drunk_time", "drunk_sway", "drunk_monster_time", "wet_time", "wine_burn", "lure_range", "crate_push_speed", "crate_burn"]
+	"pot_throw_speed", "pot_throw_run", "pot_throw_up", "pot_respawn", "honey_slow", "honey_jump", "honey_cover", "candy_heat_time", "heat_reach", "candle_heat", "swap_range", "drunk_time", "drunk_sway", "drunk_monster_time", "wet_time", "wine_burn", "lure_range", "crate_push_speed", "crate_burn",
+	"step_height", "launch_up"]

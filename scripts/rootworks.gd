@@ -15,8 +15,8 @@ extends RefCounted
 ##   small spider slips through the grate. Steer it in, context picks the seed up, context again sets it down
 ##   on the soil and it plants: its root is a second bridge across the chasm.
 ## Vine shelf (on the ground, east of the ramp): a 6 m vine wall over mud. Climb it holding the seed from its
-##   foot and plant it on the soil up top: the cube and a ledge grab reach the heart on the 4.5 m pillar. Let go
-##   of the seed 3 m or more up the vine and it drops behind you and spears into the mud.
+##   foot and plant it on the soil up top: climb its trunk and step off its top onto the heart's 4.5 m pillar.
+##   Let go of the seed 3 m or more up the vine and it drops behind you and spears into the mud.
 
 const H := 6.0 ## floor height
 const STONE := Color(0.55, 0.5, 0.42)

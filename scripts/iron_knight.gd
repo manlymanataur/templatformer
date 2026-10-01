@@ -44,7 +44,7 @@ func _physics_process(dt: float) -> void:
 func _magnet() -> void:
 	pulled = false
 	var p := _player()
-	if p == null or _mag_cd > 0.0 or hp <= 0 or not p.inventory.has("magnet") or p.small:
+	if p == null or _mag_cd > 0.0 or hp <= 0 or not p.inventory.equipped("magnet") or p.small:
 		return
 	var d := global_position - p.global_position
 	d.y = 0.0
