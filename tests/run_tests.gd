@@ -340,6 +340,7 @@ func _combat_tests() -> void:
 	await _colossus_tests()
 	await _feel_fix_tests()
 	await _poleaxe_tests()
+	await _works_tests(arena)
 	await _powers_tests()
 
 func _apex_of_next_jump() -> float:
@@ -2856,6 +2857,223 @@ func _poleaxe_tests() -> void:
 			break
 	check("a wolf kept in front of you bites within %.1f s anyway" % (Monster.WOLF_PATIENCE + 1.5), bit_at >= 0, "bit after %.1f s" % (bit_at / 60.0))
 	wolf.queue_free()
+
+
+## The Works: iron filling pits, doors held open, and Winch's racks, arm gears, screws and gear trains.
+func _works_tests(arena: Vector3) -> void:
+	var m: Dictionary = level.marks
+	var t: Tuning = level.t
+
+	# W1. Iron pushed into a pit it fits drops in flush with the floor and stays; you walk across it
+	await _fresh_player(m["works_push_fill"])
+	p.inventory.add("magnet")
+	p.magnet_push = true
+	var fill: IronCube = m["works_iron_fill"]
+	var pit: Vector3 = m["works_pit"]
+	await frames(150)
+	p.inventory = Inventory.new()
+	await frames(60)
+	var top := fill.global_position.y + IronCube.H
+	var over := Vector2(fill.global_position.x - pit.x, fill.global_position.z - pit.z).length()
+	check("iron pushed into a pit as deep as it is tall (%.1f m) drops in flush and stays" % IronCube.H, fill.sunk and absf(top) < 0.02 and over < 0.05,
+		"sunk %s, top at y %.2f, %.2f m off the pit" % [fill.sunk, top, over])
+	await _fresh_player(Works.cell(7, 6) + Vector3.UP * 0.6)
+	p.ai_move = Vector2(-1, 0)
+	var low := 99.0
+	for i in 120:
+		await physics_frame
+		low = minf(low, p.global_position.y)
+		if p.global_position.x < Works.cell(4, 6).x:
+			break
+	p.ai_move = Vector2.ZERO
+	check("you walk across iron filling a pit", p.global_position.x < Works.cell(4, 6).x and low > 0.3, "reached x %.1f, lowest y %.2f" % [p.global_position.x, low])
+	check("iron standing on iron sunk in a pit conducts power; corners still don't",
+		Power.touching(AABB(Vector3(0, -4.5, 0), Vector3(2, 4.5, 2)), AABB(Vector3(0, 0, 0), Vector3(2, 4.5, 2)))
+		and not Power.touching(AABB(Vector3(0, -4.5, 0), Vector3(2, 4.5, 2)), AABB(Vector3(2, 0, 2), Vector3(2, 4.5, 2))), "")
+
+	# W2. The far iron slides over the filled pit to the battery and powers the door. Pulled in from inside, it
+	# takes the power with it, but the door stays open while it's in the doorway and closes once it's through
+	var door: Gate = m["works_door"]
+	var iron: IronCube = m["works_iron_a"]
+	var x_cell := Works.cell(3, 6)
+	await _fresh_player(m["works_push_a"])
+	p.inventory.add("magnet")
+	p.magnet_push = true
+	var shut_first := not door.opened
+	for i in 400:
+		await physics_frame
+		if p.global_position.x - iron.global_position.x > 9.0:
+			p.global_position.x = iron.global_position.x + 6.0 # follow it, staying in range
+		if iron.global_position.distance_to(x_cell) < 0.05 and door.opened:
+			break
+	var at_x := iron.global_position.distance_to(x_cell) < 0.05
+	check("iron pushed over the filled pit to the battery powers the door", shut_first and at_x and door.opened and iron.powered,
+		"shut at first %s, iron at the battery %s, door open %s" % [shut_first, at_x, door.opened])
+	await _fresh_player(m["works_pad_stand"])
+	p.inventory.add("magnet")
+	var held := false
+	var shut_after := false
+	var hi := 0.0
+	for i in 300:
+		await physics_frame
+		if door.opened and door.held and not door.powered and door.occupied() and not iron.powered:
+			held = true
+		if held and not door.opened:
+			shut_after = true
+		hi = maxf(hi, p.global_position.y)
+	var inside := iron.global_position.distance_to(Works.cell(3, 2)) < 0.05
+	check("unpowered, the door stays open while iron stands in the doorway", held, "")
+	check("once the iron is through, the door closes", shut_after and inside and not door.opened, "iron in the room %s, door open %s" % [inside, door.opened])
+	check("the iron powers the room's launch pad, which throws you onto the 6 m pillar", p.global_position.y > float(m["works_pillar_y"]),
+		"peak %.1f, ended y %.1f" % [hi, p.global_position.y])
+
+	# W3. A door held open by you: power gone while you stand in the doorway, it waits for you to step out
+	var gate := Gate.make(level, arena + Vector3(0, 1.4, -6), Vector3(2, 4, 2), Color.GOLD)
+	gate.wire()
+	gate.remove_from_group("power_sink") # driven by hand here
+	gate.set_powered(true)
+	await _fresh_player(arena + Vector3(0, 0, -6))
+	gate.set_powered(false)
+	var kept := gate.opened
+	await place(arena)
+	gate.set_powered(false)
+	check("a powered door stays open while you stand in it and closes when you step out", kept and not gate.opened, "held %s, open after %s" % [kept, gate.opened])
+	gate.queue_free()
+
+	# W4. Meshed gears turn opposite ways; three in a ring jam and the input can't be turned
+	var ga := Gear.cog(level, arena + Vector3(0, -0.6, -8), 1.0, t)
+	var gb := Gear.cog(level, arena + Vector3(2, -0.6, -8), 1.0, t)
+	await frames(2)
+	ga.turn(1.0)
+	await frames(2)
+	check("meshed gears turn opposite ways, tooth for tooth", absf(ga.wound - 1.0) < 0.001 and absf(gb.wound + 1.0) < 0.001, "%.2f and %.2f" % [ga.wound, gb.wound])
+	var gc := Gear.cog(level, arena + Vector3(1, -0.6, -8 - sqrt(3.0)), 1.0, t)
+	await frames(2)
+	ga.turn(1.0)
+	await frames(2)
+	check("three gears meshed in a ring jam: the input can't be turned", absf(ga.wound - 1.0) < 0.001 and absf(gb.wound + 1.0) < 0.001 and absf(gc.wound) < 0.001 and ga.jams > 0,
+		"wound %.2f, %.2f, %.2f, jams %d" % [ga.wound, gb.wound, gc.wound, ga.jams])
+	for g in [ga, gb, gc]:
+		g.queue_free()
+
+	# W5. The Works gear train: one clutch gear between input and gate gear turns the gate the wrong way
+	# (against its stop) while the flush screw only lets the input go one way: nothing moves. Crank the clutch
+	# over so two gears sit in between, and the gate rises
+	var inp: Gear = m["works_train_in"]
+	var out: Gear = m["works_train_out"]
+	var lock: Screw = m["works_train_lock"]
+	var clutch: Rack = m["works_clutch"]
+	var crank: Gear = m["works_clutch_crank"]
+	var gate_y: float = (m["works_train_gate"] as Node3D).global_position.y
+	inp.turn(-3.0)
+	await frames(2)
+	inp.turn(3.0)
+	await frames(2)
+	var stuck := absf(out.wound) < 0.001 and absf(lock.wound) < 0.001
+	var stuck_at := "gate gear %.2f, screw %.2f" % [out.wound, lock.wound]
+	crank.turn(20.0)
+	await frames(2)
+	var slid := absf(clutch.offset - clutch.travel) < 0.001
+	inp.turn(-4.0)
+	await frames(2)
+	var rise: float = (m["works_train_gate"] as Node3D).global_position.y - gate_y
+	check("with one gear between, the gate gear would turn against its stop and the flush screw won't sink: the input is stuck", stuck,
+		stuck_at)
+	check("the crank slides the clutch %.2f m; with two gears between, the input winds the gate up and the screw rises" % clutch.travel,
+		slid and absf(out.wound - 4.0) < 0.01 and absf(lock.wound - 4.0) < 0.01 and absf(rise - 4.0 * t.gear_ratio) < 0.01,
+		"clutch at %.2f, gate gear %.2f, screw %.2f, gate up %.2f m" % [clutch.offset, out.wound, lock.wound, rise])
+
+	# W6. A rack slides its crank ratio per metre of rim: a full turn of the ferry's crank moves the deck
+	# TAU * r * crank_ratio; standing on the deck pins it
+	var deck: Rack = m["works_deck"]
+	var dcrank: Gear = m["works_crank"]
+	var x0 := deck.global_position.x
+	var cx0 := dcrank.global_position.x
+	dcrank.turn(TAU * dcrank.radius)
+	await frames(2)
+	var moved := deck.global_position.x - x0
+	var want := TAU * dcrank.radius * t.crank_ratio
+	check("a full turn of the crank slides the deck rack %.2f m and carries the crank" % want, absf(moved - want) < 0.01 and absf(dcrank.global_position.x - cx0 - want) < 0.01,
+		"deck moved %.2f m, crank %.2f m" % [moved, dcrank.global_position.x - cx0])
+	await _fresh_player(deck.global_position + Vector3(-2, 0.6, -2))
+	await frames(10)
+	var x1 := deck.global_position.x
+	dcrank.turn(-2.0)
+	await frames(2)
+	check("standing on a rack pins it: its crank can't turn", absf(deck.global_position.x - x1) < 0.001, "deck moved %.2f m" % (deck.global_position.x - x1))
+	await place(m["works_ferry"])
+	dcrank.turn(-50.0) # back to the near bank
+	await frames(2)
+
+	# W7. The spider walks onto the deck and round the crank: the deck carries it across the 14 m pit
+	await _fresh_player(m["works_ferry"])
+	p.inventory.add("spider")
+	p.facing = Vector3.RIGHT
+	await _use("spider")
+	var sp: Spider = p.spider
+	var c := dcrank.global_position
+	sp.global_position = Vector3(c.x, sp.global_position.y, c.z + 1.5)
+	await frames(10)
+	for i in 900:
+		var rel := sp.global_position - dcrank.global_position
+		rel.y = 0.0
+		var tangent := Vector3(rel.z, 0, -rel.x).normalized()
+		var dir := tangent + rel.normalized() * (1.5 - rel.length())
+		p.ai_move = Vector2(dir.x, dir.z).limit_length(1.0)
+		await physics_frame
+		if deck.offset >= deck.travel - 0.001:
+			break
+	p.ai_move = Vector2(1, 0) # off the deck onto the far bank
+	await frames(60)
+	p.ai_move = Vector2.ZERO
+	await frames(5)
+	check("walked round the crank, the spider rides the deck across the pit", deck.offset >= deck.travel - 0.001 and sp.global_position.x > 222.3 and sp.global_position.y > 0.0,
+		"deck at %.1f of %.1f m, spider at x %.1f y %.1f" % [deck.offset, deck.travel, sp.global_position.x, sp.global_position.y])
+	await _use("spider")
+	p.stow_spider()
+
+	# W8. The arm gear: a notch (a quarter turn) swings the bridge from along the bank to across the 14 m chasm
+	var arm: ArmGear = m["works_arm"]
+	var lay := arm.arm_dir()
+	arm.turn(Gear.STEP * 0.4) # less than half a notch: the arm stays put
+	await frames(40)
+	var stays := arm.arm_dir().dot(lay) > 0.999
+	arm.turn(Gear.STEP * 0.6)
+	await frames(60)
+	check("a notch (%.2f m of rim, a quarter turn) swings the arm bridge across the chasm; less than half a notch doesn't" % Gear.STEP,
+		lay.dot(Vector3.BACK) > 0.999 and stays and arm.arm_dir().dot(Vector3.RIGHT) > 0.999, "across %.2f" % arm.arm_dir().dot(Vector3.RIGHT))
+	await _fresh_player(Vector3(246, 0.6, -20))
+	p.ai_move = Vector2(1, 0)
+	for i in 150:
+		await physics_frame
+		if p.global_position.x > 259.5:
+			break
+	p.ai_move = Vector2.ZERO
+	check("you walk the arm bridge to the island", p.global_position.x > float(m["works_island_x"]) and p.global_position.y > -0.5,
+		"ended x %.1f y %.1f" % [p.global_position.x, p.global_position.y])
+
+	# W9. Screws: flush, they're floor; each notch raises one screw_notch and lifts you; flush won't sink, top won't rise
+	var sl: Screw = m["works_screw_low"]
+	var sh: Screw = m["works_screw_high"]
+	await _fresh_player(sl.global_position + Vector3.UP * 0.6)
+	var y0 := p.global_position.y
+	sl.turn(-Gear.STEP)
+	await frames(2)
+	var no_sink := sl.height_notch() == 0
+	sl.turn(Gear.STEP)
+	await frames(40)
+	var lift1 := p.global_position.y - y0
+	check("a screw rises one notch (%.1f m) per notch it turns, lifting you; flush, it can't sink" % t.screw_notch,
+		no_sink and sl.height_notch() == 1 and absf(sl.height() - t.screw_notch) < 0.01 and absf(lift1 - t.screw_notch) < 0.15,
+		"notch %d, height %.2f, lifted you %.2f m" % [sl.height_notch(), sl.height(), lift1])
+	sl.turn(Gear.STEP * 5.0)
+	sh.turn(Gear.STEP * 9.0)
+	await frames(90)
+	check("wound to their tops the screws are 2 m steps up the 6 m ledge", sl.height_notch() == 2 and sh.height_notch() == 4
+		and absf(sl.height() - 2.0 * t.screw_notch) < 0.01 and absf(float(m["works_ledge_y"]) - sh.height() - 2.0) < 0.01,
+		"low %.1f m, high %.1f m, ledge %.1f m" % [sl.height(), sh.height(), float(m["works_ledge_y"])])
+	await _fresh_player(arena)
+
 
 ## A powers-book monster that holds still for the test: no AI, no drop.
 func _foe(kind: String, pos: Vector3, hp := 10) -> Monster:

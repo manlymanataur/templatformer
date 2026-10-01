@@ -4,7 +4,8 @@ extends Node
 ## face to face, and power flows on through iron touching iron. Anything in group "power_sink"
 ## (doors, powered pads) is on while it touches a battery or powered iron. Every piece provides power_box(),
 ## a world AABB. Touching means the boxes meet on a side: a small gap on one horizontal axis and real
-## overlap on the other and vertically, so corners (diagonals) never connect.
+## overlap on the other and vertically, so corners (diagonals) never connect. A box resting on top of another
+## (iron on iron sunk in a pit) touches it too.
 
 const GAP := 0.15
 
@@ -14,6 +15,8 @@ static func touching(a: AABB, b: AABB) -> bool:
 	var ox: float = ov.call(a.position.x, a.end.x, b.position.x, b.end.x)
 	var oy: float = ov.call(a.position.y, a.end.y, b.position.y, b.end.y)
 	var oz: float = ov.call(a.position.z, a.end.z, b.position.z, b.end.z)
+	if oy > -GAP and oy <= GAP and ox > 0.5 and oz > 0.5:
+		return true # stacked: iron standing on iron sunk in a pit
 	if oy < 0.3:
 		return false
 	return (ox > -GAP and ox <= GAP and oz > 0.5) or (oz > -GAP and oz <= GAP and ox > 0.5)
