@@ -2,6 +2,7 @@ class_name Bomb
 extends CharacterBody3D
 ## Bomb. Pulled out overhead with its fuse already lit, then thrown in an arc or set down.
 ## After FUSE seconds it hurts everything hurtable within RADIUS, you included (even if you're still holding it).
+## It's carryable (hold, set_down, throw), so the clockwork spider can pick up one that's lying about.
 ## Powers book: on the ground it stops quickly (t.bomb_friction). An attack whose hit shape reaches it bats it
 ## away at t.bomb_bat_speed, and a bomb flying faster than BAT_FUSE_SPEED goes off on the first monster it hits.
 ## Pound onto it and it goes off under you: a bomb jump (t.bomb_jump_speed up) that doesn't hurt you.
@@ -13,7 +14,7 @@ const DAMAGE := 2
 const GRAVITY := 30.0
 const BAT_FUSE_SPEED := 6.0 ## flying faster than this, it goes off on contact with a monster
 
-var holder: Player = null
+var holder: Node3D = null ## the player or the spider carrying it
 var _t := 0.0
 var _mat: StandardMaterial3D
 var _exploded := false
@@ -21,6 +22,7 @@ var _bat_cd := 0.0
 var _spare: Node = null ## a bomb jump: the one riding the blast isn't hurt by it
 
 func _ready() -> void:
+	add_to_group("carryable")
 	collision_layer = 0 # nothing bumps into a bomb
 	collision_mask = 1
 	var p := _player()
@@ -41,6 +43,13 @@ func _ready() -> void:
 	mi.material_override = _mat
 	add_child(mi)
 
+func carry_size() -> Vector3:
+	return Vector3.ONE * 0.7
+
+func hold(by: Node3D) -> void:
+	holder = by
+	velocity = Vector3.ZERO
+
 func throw(v: Vector3) -> void:
 	holder = null
 	velocity = v
@@ -56,8 +65,10 @@ func _physics_process(dt: float) -> void:
 	_t += dt
 	var blink := fmod(_t * (3.0 + _t * 6.0), 1.0) < 0.5
 	_mat.albedo_color = Color(0.9, 0.3, 0.2) if blink else Color(0.15, 0.15, 0.2)
+	if holder != null and not is_instance_valid(holder):
+		holder = null
 	if holder != null:
-		global_position = holder.global_position + Vector3.UP * 1.0
+		global_position = holder.global_position + Vector3.UP * (holder.radius() + 0.5)
 	else:
 		var p := _player()
 		_bat_cd -= dt
@@ -107,7 +118,7 @@ func _bat(p: Player) -> void:
 		if absf(along) > box.z / 2.0 + 0.3 or absf(side) > box.x / 2.0 + 0.3 or absf(rel.y) > box.y / 2.0 + 0.8:
 			return
 	_bat_cd = 0.4
-	velocity = fwd * p.t.bomb_bat_speed + Vector3.UP * 3.0
+	velocity = fwd * p.t.bomb_bat_speed + Vector3.UP * p.t.bomb_bat_up
 	global_position.y += 0.05
 	Hitfx.sparks(get_tree(), global_position, 0.6)
 
@@ -128,8 +139,12 @@ func _bomb_jump(p: Player) -> bool:
 func explode() -> void:
 	_exploded = true
 	Hitfx.shake(get_tree(), 0.35)
-	if holder != null and holder.carrying == self:
-		holder.carrying = null
+	if holder != null and not is_instance_valid(holder):
+		holder = null
+	if holder is Player and (holder as Player).carrying == self:
+		(holder as Player).carrying = null
+	elif holder is Spider and (holder as Spider).held == self:
+		(holder as Spider).held = null
 	for n in get_tree().get_nodes_in_group("hurtable"):
 		var node := n as Node3D
 		if node == _spare:

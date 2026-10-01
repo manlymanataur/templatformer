@@ -48,8 +48,8 @@ extends Resource
 @export var surf_friction := 0.8 ## shield surf: slow-down on the flat (m/s per s)
 @export var surf_turn := 1.8 ## shield surf: steering (radians per second)
 @export var surf_min := 1.5 ## shield surf ends below this speed on the flat
-@export var focus_near := 3.0 ## locked on this far from a monster (or further) builds focus
-@export var focus_far := 5.5 ## ...up to this far
+@export var focus_near := 6.0 ## locked on this far from a monster (or further) builds focus (just outside the doubled poleaxe's reach)
+@export var focus_far := 11.0 ## ...up to this far
 @export var focus_rate := 0.45 ## focus per second (full at 1)
 @export var bomb_throw_speed := 5.0 ## forward speed of a thrown bomb (jovi: shorter throws than the old 7)
 @export var bomb_throw_up := 4.5
@@ -107,6 +107,7 @@ extends Resource
 @export var bomb_throw_keep := 0.15 ## a thrown bomb keeps this share of your running speed (was 0.3)
 @export var bomb_friction := 45.0 ## a bomb on the ground slows by this (m/s per s): it stops near where it lands
 @export var bomb_bat_speed := 14.0 ## an attack that reaches a bomb on the ground bats it away this fast
+@export var bomb_bat_up := 6.0 ## ...and this fast up, so a bat carries past the doubled poleaxe's reach (about 6 m before it lands)
 @export var bomb_jump_speed := 20.0 ## pound onto a bomb: it goes off under you and throws you up this fast, unhurt
 @export var pincer_window := 0.5 ## you and Umbra hitting the same monster within this many seconds is a pincer
 @export var pincer_bonus := 2.0 ## extra damage for a pincer
@@ -124,5 +125,5 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", 
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
 	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "hammer_hold", "spin_charge_time", "charge_speed", "run_attack_speed", "fast_blade_speed", "perfect_guard", "parry_time", "guard_speed", "guard_push", "guard_push_heavy", "guard_wall", "guard_break", "brace_time", "impale_speed", "impale_damage", "impale_stun", "stuck_time", "surf_friction", "surf_turn", "surf_min", "focus_near", "focus_far", "focus_rate", "bomb_throw_speed",
 	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_lag", "cam_recenter_delay",
-	"seed_throw_speed", "seed_throw_up", "bomb_throw_keep", "bomb_friction", "bomb_bat_speed", "bomb_jump_speed", "pincer_window", "pincer_bonus", "knight_magnet_range",
+	"seed_throw_speed", "seed_throw_up", "bomb_throw_keep", "bomb_friction", "bomb_bat_speed", "bomb_bat_up", "bomb_jump_speed", "pincer_window", "pincer_bonus", "knight_magnet_range",
 	"knight_pull_speed", "knight_open_time", "knight_push_knock", "knight_magnet_cd", "iron_plough_knock", "fire_spread_delay", "fire_damage_every"]

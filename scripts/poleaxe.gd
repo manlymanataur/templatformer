@@ -19,22 +19,24 @@ extends Node3D
 signal move_started(move: String)
 
 const COMBO_WINDOW := 0.35 ## after a move ends, press again within this to continue the combo
-const TIP_FROM := 2.25 ## a point hit this far out (centre to centre) is a tipper: double damage
-const EDGE_FROM := 2.0 ## a blade hit this far out is on the edge: +1
-const HAMMER_BAND := Vector2(1.4, 2.6) ## a hammer hit in this band lands the head's centre: +2
+const REACH := 2.0 ## the weapon's size: jovi doubled it (2026-10-01). Every range and hit shape below scales with it.
+const TIP_FROM := 2.25 * REACH ## a point hit this far out (centre to centre) is a tipper: double damage
+const EDGE_FROM := 2.0 * REACH ## a blade hit this far out is on the edge: +1
+const HAMMER_BAND := Vector2(1.4, 2.6) * REACH ## a hammer hit in this band lands the head's centre: +2
 
 ## name: duration, active from/to, damage, head, hit shape ("box" size and forward offset, or "sphere"
-## radius), knockback speed, and whether it launches, staggers or spikes
+## radius), knockback speed, and whether it launches, staggers or spikes. The bash is the shield's, so it
+## doesn't grow with REACH.
 const MOVES := {
-	"thrust": {"dur": 0.3, "from": 0.08, "to": 0.18, "dmg": 1, "head": "point", "box": Vector3(0.9, 1.3, 2.8), "fwd": 1.7, "knock": 6.0},
-	"thrust2": {"dur": 0.3, "from": 0.08, "to": 0.18, "dmg": 1, "head": "point", "box": Vector3(0.9, 1.3, 2.8), "fwd": 1.7, "knock": 6.0},
-	"sweep": {"dur": 0.44, "from": 0.12, "to": 0.28, "dmg": 2, "head": "blade", "box": Vector3(3.6, 1.3, 2.6), "fwd": 1.4, "knock": 5.0, "launch": true},
-	"run": {"dur": 0.4, "from": 0.06, "to": 0.28, "dmg": 2, "head": "blade", "box": Vector3(3.0, 1.3, 2.8), "fwd": 1.5, "knock": 8.0},
-	"hammer": {"dur": 0.42, "from": 0.06, "to": 0.2, "dmg": 2, "head": "hammer", "box": Vector3(1.6, 2.2, 2.6), "fwd": 1.8, "knock": 13.0, "stagger": true, "spike": true},
-	"spin": {"dur": 0.55, "from": 0.05, "to": 0.45, "dmg": 2, "head": "blade", "sphere": 2.9, "knock": 8.0},
-	"air": {"dur": 0.36, "from": 0.05, "to": 0.3, "dmg": 2, "head": "blade", "box": Vector3(1.6, 2.2, 2.4), "fwd": 1.3, "knock": 5.0},
+	"thrust": {"dur": 0.3, "from": 0.08, "to": 0.18, "dmg": 1, "head": "point", "box": Vector3(0.9, 1.3, 2.8) * REACH, "fwd": 1.7 * REACH, "knock": 6.0},
+	"thrust2": {"dur": 0.3, "from": 0.08, "to": 0.18, "dmg": 1, "head": "point", "box": Vector3(0.9, 1.3, 2.8) * REACH, "fwd": 1.7 * REACH, "knock": 6.0},
+	"sweep": {"dur": 0.44, "from": 0.12, "to": 0.28, "dmg": 2, "head": "blade", "box": Vector3(3.6, 1.3, 2.6) * REACH, "fwd": 1.4 * REACH, "knock": 5.0, "launch": true},
+	"run": {"dur": 0.4, "from": 0.06, "to": 0.28, "dmg": 2, "head": "blade", "box": Vector3(3.0, 1.3, 2.8) * REACH, "fwd": 1.5 * REACH, "knock": 8.0},
+	"hammer": {"dur": 0.42, "from": 0.06, "to": 0.2, "dmg": 2, "head": "hammer", "box": Vector3(1.6, 2.2, 2.6) * REACH, "fwd": 1.8 * REACH, "knock": 13.0, "stagger": true, "spike": true},
+	"spin": {"dur": 0.55, "from": 0.05, "to": 0.45, "dmg": 2, "head": "blade", "sphere": 2.9 * REACH, "knock": 8.0},
+	"air": {"dur": 0.36, "from": 0.05, "to": 0.3, "dmg": 2, "head": "blade", "box": Vector3(1.6, 2.2, 2.4) * REACH, "fwd": 1.3 * REACH, "knock": 5.0},
 	"bash": {"dur": 0.3, "from": 0.04, "to": 0.14, "dmg": 1, "head": "shield", "box": Vector3(1.6, 1.4, 1.6), "fwd": 1.0, "knock": 10.0},
-	"flash": {"dur": 0.3, "from": 0.1, "to": 0.2, "dmg": 4, "head": "point", "box": Vector3(0.9, 1.4, 2.8), "fwd": 1.7, "knock": 8.0, "stagger": true},
+	"flash": {"dur": 0.3, "from": 0.1, "to": 0.2, "dmg": 4, "head": "point", "box": Vector3(0.9, 1.4, 2.8) * REACH, "fwd": 1.7 * REACH, "knock": 8.0, "stagger": true},
 }
 const COMBO := ["thrust", "thrust2", "sweep"]
 const HOLDABLE := ["thrust", "thrust2", "sweep", "run"] ## these freeze at the end of their startup while you hold attack
@@ -56,6 +58,7 @@ var _fire: MeshInstance3D
 
 func _ready() -> void:
 	_shaft = Node3D.new()
+	_shaft.scale = Vector3.ONE * REACH # the parts below are the old size; the whole weapon is REACH times bigger
 	add_child(_shaft)
 	var wood := StandardMaterial3D.new()
 	wood.albedo_color = Color(0.45, 0.32, 0.2)
@@ -191,6 +194,10 @@ func _physics_process(dt: float) -> void:
 func _animate(k: float) -> void:
 	_shaft.position = Vector3.ZERO
 	rotation = Vector3.ZERO
+	_animate_at(k)
+	_shaft.position *= REACH
+
+func _animate_at(k: float) -> void:
 	match move:
 		"thrust", "thrust2", "flash":
 			_shaft.position.z = 0.5 - sin(k * PI) * 1.4
@@ -240,7 +247,7 @@ func _hit_query(def: Dictionary) -> void:
 		q.shape = box
 		var centre := player.global_position + fwd * float(def["fwd"])
 		if move == "air" or (move == "hammer" and not player.is_on_floor()):
-			centre += Vector3.DOWN * 0.6
+			centre += Vector3.DOWN * 0.6 * REACH
 		q.transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), centre)
 	q.exclude = [player.get_rid()]
 	for r in player.get_world_3d().direct_space_state.intersect_shape(q, 16):
