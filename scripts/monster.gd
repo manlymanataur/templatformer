@@ -5,7 +5,8 @@ extends CharacterBody3D
 ##   wolf    circles you at bite range and bites from outside your front, or anyway after WOLF_PATIENCE.
 ##   rusher  telegraphs, then charges in a straight line at RUSH_SPEED. Heavy: a block pushes you far, a wall
 ##           behind you breaks your guard, and a brace impales it. Charging into a wall dazes it.
-##   archer  keeps its distance and shoots arrows. A perfect guard sends them back.
+##   archer  keeps its distance and shoots fast arrows. A perfect guard sends them back.
+##   caster  keeps further off and lobs slow orbs (Orb). Guard or swing at one to send it back.
 ##   shield  a blob with a shield in front: the point glances off it, the blade cracks it, the hammer or a
 ##           shield bash smashes it.
 ##   brute   armoured: only the hammer, or the opening a perfect guard makes, staggers it. Its swing is heavy.
@@ -13,6 +14,9 @@ extends CharacterBody3D
 ## shield surf onto it pogos you off.
 ## Hits from the poleaxe go through strike(), which knows the move: sweet spots, counters (hit in its windup),
 ## whiff punishes (hit while it recovers from a miss), launches and juggles, spikes, splats and bowling.
+## How it dies shows (Corpse): the killing blow throws the body along the hit, the head shapes it (cut, flattened,
+## charred), and each kind goes its own way (burst, dissolve, disintegrate).
+## Impact (jovi, 2026-10-03): a hit squashes and stretches weak kinds (IMPORTANCE low) and shakes the screen for big ones.
 ## Liquids: honey draws blobs and wolves and holds them (bigger kinds are slowed), wine draws brutes and rushers
 ## and makes anything drunk (it wanders, and stops avoiding ledges), heat hardens honey into rock candy.
 
@@ -20,17 +24,21 @@ const AGGRO := 9.0
 const SPEED := 3.2
 const TOUCH := 1.1
 const GRAVITY := 30.0
-const AIR_GRAVITY := 20.0 ## launched: it hangs a little longer so you can follow it up
+const AIR_GRAVITY := 13.0 ## launched: it hangs a good while so you can follow it up
 const LAUNCH_UP := 10.0 ## a launcher throws it this fast up unless the hit says (info lift: the poleaxe's Tuning.launch_up)
-const JUGGLE_LIFT := 8.0 ## each air hit lifts it less: 8, 6, 4, then only a spike (hammer or pound) works
-const JUGGLE_MAX := 3
+const JUGGLE_LIFT := 9.0 ## each air hit lifts it less: 9, 7.5, 6, 4.5, then only a spike (hammer or pound) works
+const JUGGLE_MAX := 4
+const JUGGLE_FALL := 0.3 ## each juggle makes it fall this much faster
+const SPIKE_BOUNCE := 7.0 ## a spiked monster that lives bounces this fast back up, to relaunch or home onto
 const SPIKE_SPEED := 26.0
 const KNOCK_HEAVY := 9.0 ## knockback this strong sends it sliding (low friction): splats and bowling
 const SPLAT_SPEED := 4.0
 const WOLF_PATIENCE := 2.5
 const WOLF_RING := 3.2
 const RUSH_SPEED := 14.0
-const ARROW_SPEED := 16.0
+const ARROW_SPEED := 26.0
+## How much a kind matters: weak ones squash and stretch when hit, big ones shake the screen instead.
+const IMPORTANCE := {"blob": 0.15, "wolf": 0.25, "archer": 0.25, "caster": 0.25, "shield": 0.35, "rusher": 0.55, "brute": 0.9}
 
 var kind := "blob"
 var spiked := false
@@ -58,6 +66,10 @@ var _base := Color(0.35, 0.75, 0.3)
 var _mat: StandardMaterial3D
 var _shield: MeshInstance3D
 var _r := 0.55
+var _vis: Node3D ## every mesh hangs off this: it squashes, and the corpse takes it
+var _sq := 0.0 ## squash amount (+ flat and wide, - tall and thin), a spring back to 0
+var _sq_v := 0.0
+var _how := {} ## how the last hit landed (head, away, knock, fire, spin): the corpse reads it
 
 static func spawn(parent: Node, pos: Vector3, kind_ := "blob", spiked_ := false) -> Monster:
 	var m := Monster.new()
@@ -87,6 +99,10 @@ func _ready() -> void:
 			max_hp = 2
 			_base = Color(0.6, 0.4, 0.8)
 			size = Vector3(0.8, 1.4, 0.8)
+		"caster":
+			max_hp = 2
+			_base = Color(0.85, 0.75, 0.3)
+			size = Vector3(0.9, 1.2, 0.9)
 		"shield":
 			max_hp = 4
 			shield_hp = 2
@@ -98,6 +114,8 @@ func _ready() -> void:
 			size = Vector3(1.7, 1.5, 1.7)
 			_r = 0.8
 	hp = max_hp
+	_vis = Node3D.new()
+	add_child(_vis)
 	var c := CollisionShape3D.new()
 	var s := SphereShape3D.new()
 	s.radius = _r
@@ -112,7 +130,7 @@ func _ready() -> void:
 	_mat = StandardMaterial3D.new()
 	_mat.albedo_color = _base
 	body.material_override = _mat
-	add_child(body)
+	_vis.add_child(body)
 	for side in [-0.2, 0.2]:
 		var eye := MeshInstance3D.new()
 		var em := SphereMesh.new()
@@ -123,7 +141,7 @@ func _ready() -> void:
 		emat.albedo_color = Color(0.05, 0.05, 0.05)
 		eye.material_override = emat
 		eye.position = Vector3(side, 0.15, -size.z / 2.0 + 0.1)
-		add_child(eye)
+		_vis.add_child(eye)
 	if kind == "shield":
 		_shield = MeshInstance3D.new()
 		var bm := BoxMesh.new()
@@ -134,7 +152,7 @@ func _ready() -> void:
 		shm.metallic = 0.6
 		_shield.material_override = shm
 		_shield.position = Vector3(0, 0.05, -0.75)
-		add_child(_shield)
+		_vis.add_child(_shield)
 	if armored:
 		var plate := MeshInstance3D.new()
 		var pm := BoxMesh.new()
@@ -145,7 +163,7 @@ func _ready() -> void:
 		am.metallic = 0.8
 		plate.material_override = am
 		plate.position.y = 0.45
-		add_child(plate)
+		_vis.add_child(plate)
 	if spiked:
 		var tip := StandardMaterial3D.new()
 		tip.albedo_color = Color(0.9, 0.25, 0.2)
@@ -162,7 +180,7 @@ func _ready() -> void:
 			var lean := 0.0 if k == 0 else 0.5
 			spike.position = Vector3(cos(a) * 0.25 * signf(lean), size.y / 2.0 + 0.1, sin(a) * 0.25 * signf(lean))
 			spike.rotation = Vector3(sin(a) * lean, 0, -cos(a) * lean)
-			add_child(spike)
+			_vis.add_child(spike)
 
 func _player() -> Player:
 	var ps := get_tree().get_nodes_in_group("player")
@@ -189,8 +207,9 @@ func _physics_process(dt: float) -> void:
 	var g := GRAVITY
 	if air:
 		_air_t += dt
-		g = AIR_GRAVITY * (1.0 + 0.6 * juggle)
+		g = AIR_GRAVITY * (1.0 + JUGGLE_FALL * juggle)
 	velocity.y -= g * dt
+	_squash_step(dt)
 	var p := _player()
 	if stun > 0.0 or air:
 		stun -= dt
@@ -221,7 +240,7 @@ func _think(dt: float, p: Player) -> void:
 		to = p.global_position - global_position
 	var flat := Vector3(to.x, 0, to.z)
 	var dist := flat.length()
-	var near := p != null and dist < (14.0 if kind in ["archer", "rusher"] else AGGRO)
+	var near := p != null and dist < (16.0 if kind == "caster" else 14.0 if kind in ["archer", "rusher"] else AGGRO)
 	state_t -= dt
 	var dir := Vector3.ZERO
 	var speed := SPEED
@@ -263,6 +282,13 @@ func _think(dt: float, p: Player) -> void:
 						elif dist < 12.0:
 							dir = Vector3.ZERO
 							_begin("windup", 0.9)
+					"caster":
+						speed = 2.6
+						if dist < 6.0:
+							dir = -flat.normalized()
+						elif dist < 15.0:
+							dir = Vector3.ZERO
+							_begin("windup", 1.1)
 					"brute":
 						speed = 2.2
 						if dist < 2.6:
@@ -347,6 +373,14 @@ func _strike_out(p: Player, flat: Vector3) -> void:
 				var aim := (p.global_position - from).normalized()
 				Arrow.shoot(get_parent(), from + aim * 0.8, aim * ARROW_SPEED, self)
 			_begin("recover", 1.0)
+		"caster":
+			if p != null:
+				var from := global_position + Vector3.UP * 0.5
+				var aim := p.global_position - from
+				aim.y = 0.0
+				aim = aim.normalized() if aim.length() > 0.01 else _fwd()
+				Orb.shoot(get_parent(), from + aim * 0.9, p, self)
+			_begin("recover", 1.6)
 		"brute":
 			# a heavy swing in front
 			if p != null and flat.length() < 3.0 and _fwd().dot(d) > 0.3 and p.invuln <= 0.0:
@@ -380,8 +414,9 @@ func _after_move(before: Vector3) -> void:
 			knocked_t = 0.0
 			velocity = c.get_normal() * 2.0
 			stun = maxf(stun, 1.0)
+			_how = {"head": "splat", "away": c.get_normal(), "knock": sp}
+			Hitfx.hit(get_tree(), c.get_position(), _tuning(), 1.2, self)
 			_take(1)
-			Hitfx.hit(get_tree(), c.get_position(), _tuning(), 1.2)
 			return
 
 func _land() -> void:
@@ -390,14 +425,23 @@ func _land() -> void:
 	_air_t = 0.0
 	if slammed:
 		slammed = false
-		Hitfx.shake(get_tree(), 0.2)
+		Hitfx.shake(get_tree(), 0.2 + 0.2 * importance())
 		Hitfx.sparks(get_tree(), global_position, 1.5)
+		_sq = maxf(_sq, 0.6 * (1.0 - importance()))
+		# the shockwave knocks down everything near it
 		for n in get_tree().get_nodes_in_group("monsters"):
 			var m := n as Monster
 			if m != self and m.global_position.distance_to(global_position) < 3.0:
-				m.strike(1, global_position, {"knock": 7.0})
+				m.strike(1, global_position, {"knock": 7.0, "stagger": true})
+		_how = {"head": "spike", "away": Vector3.ZERO, "knock": 3.0}
 		_take(1)
 		stun = maxf(stun, 0.8)
+		if hp > 0:
+			# it bounces once: relaunch it or home onto it
+			air = true
+			_air_t = 0.0
+			velocity = Vector3.UP * SPIKE_BOUNCE
+			global_position.y += 0.05
 
 func _tuning() -> Tuning:
 	var p := _player()
@@ -425,6 +469,8 @@ func strike(amount: int, from: Vector3, info: Dictionary) -> int:
 	away.y = 0
 	away = away.normalized() if away.length() > 0.01 else -_fwd()
 	var head: String = info.get("head", "")
+	_how = {"head": "spike" if air and info.get("spike", false) else head, "away": away,
+		"knock": float(info.get("knock", 9.0)), "fire": info.get("fire", false), "spin": info.get("spin", false)}
 	var from_front := _fwd().dot(-away) > 0.3
 	if shield_hp > 0 and from_front and open_t <= 0.0 and not info.get("above", false) and head != "":
 		match head:
@@ -469,6 +515,7 @@ func strike(amount: int, from: Vector3, info: Dictionary) -> int:
 		if air and info.get("spike", false):
 			velocity = Vector3(away.x, 0, away.z) * 2.0 + Vector3.DOWN * SPIKE_SPEED
 			slammed = true
+			Hitfx.stop(get_tree(), _tuning().hitstop_spike)
 			return dmg
 		if info.get("launch", false) and not info.get("air", false):
 			# launched: up it goes, nearly straight, for you to follow. A launcher from the ground catches one
@@ -484,7 +531,7 @@ func strike(amount: int, from: Vector3, info: Dictionary) -> int:
 		if info.get("air", false):
 			juggle += 1
 			if juggle <= JUGGLE_MAX:
-				velocity = away * 1.0 + Vector3.UP * JUGGLE_LIFT * (1.0 - 0.25 * (juggle - 1))
+				velocity = away * 1.0 + Vector3.UP * JUGGLE_LIFT * (1.0 - (juggle - 1) / 6.0)
 			return dmg
 		velocity.x = away.x * 3.0
 		velocity.z = away.z * 3.0
@@ -504,4 +551,26 @@ func _take(dmg: int) -> void:
 func _die() -> void:
 	if drop_heart:
 		Pickup.spawn(get_parent(), "heart", 1, global_position + Vector3.UP * 0.5)
+	Hitfx.stop(get_tree(), _tuning().hitstop_kill)
+	Corpse.spawn(self, _how)
 	queue_free()
+
+## A hit of this strength landed: squash it (weak kinds give a lot, big ones barely) and return how much the
+## screen shakes for it (big ones shake it more).
+func impact(strength: float, t: Tuning) -> float:
+	var imp := importance()
+	_sq = maxf(_sq, minf(strength * t.squash * (1.0 - imp), 0.7))
+	_sq_v = 0.0
+	return 0.3 + 1.7 * imp
+
+func importance() -> float:
+	return float(IMPORTANCE.get(kind, 0.3))
+
+## The squash springs back through a stretch and settles.
+func _squash_step(dt: float) -> void:
+	_sq_v += (-_sq * 320.0 - _sq_v * 13.0) * dt
+	_sq += _sq_v * dt
+	if absf(_sq) < 0.002 and absf(_sq_v) < 0.02:
+		_sq = 0.0
+		_sq_v = 0.0
+	_vis.scale = Vector3(1.0 + _sq * 0.6, 1.0 - _sq, 1.0 + _sq * 0.6)

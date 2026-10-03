@@ -1,17 +1,25 @@
 class_name Hitfx
 extends RefCounted
 ## Hit feel: hitstop (the whole game freezes for a few frames), screen shake, and a burst of sparks.
+## Only kills, spikes, sweet spots and parries freeze the game (jovi, 2026-10-03); plain hits don't.
+## How hard a hit lands shows on what it hits: a weak monster squashes and stretches (Monster.impact), a big
+## one barely gives but shakes the screen.
 ## Also the slow-motion after a perfect dodge (see Player.hurt): monsters crawl while you move at full speed.
 
 static var slow_left := 0.0 ## seconds of perfect-dodge slow-motion left
 static var world := 1.0 ## how fast monsters run right now (the player sets it each frame)
 static var _stopping := false
 
-## A solid hit at `at`: freeze briefly, shake, spark. strength 1 is a normal poleaxe hit.
-static func hit(tree: SceneTree, at: Vector3, t: Tuning, strength := 1.0) -> void:
+## A solid hit at `at`: spark and shake. strength 1 is a normal poleaxe hit. who is what got hit: if it has
+## impact(strength, t) (monsters), that squashes it and returns how much the screen shakes for it.
+## freeze is real seconds of hitstop, 0 for a plain hit.
+static func hit(tree: SceneTree, at: Vector3, t: Tuning, strength := 1.0, who: Node = null, freeze := 0.0) -> void:
 	sparks(tree, at, strength)
-	shake(tree, t.shake_hit * strength)
-	stop(tree, t.hitstop * strength)
+	var rumble := 1.0
+	if who != null and is_instance_valid(who) and who.has_method("impact"):
+		rumble = who.impact(strength, t)
+	shake(tree, t.shake_hit * strength * rumble)
+	stop(tree, freeze)
 
 ## Freeze the whole game for secs of real time.
 static func stop(tree: SceneTree, secs: float) -> void:

@@ -24,12 +24,15 @@ extends Resource
 @export var wall_slide_speed := 4.0
 @export var wall_jump_speed := 8.0 ## away from the wall
 @export var wall_jump_up := 12.0
+@export var wall_jump_side := 6.0 ## stick held along the wall as you kick off angles the jump that way
+@export var wall_coyote := 0.1 ## a wall jump still works this long after you leave the wall
 @export var roll_speed := 13.0
 @export var roll_time := 0.4
 @export var roll_invuln := 0.3 ## dodge window at the start of a roll
 @export var strafe_speed := 7.0 ## top speed while holding target
 @export var hammer_hold := 0.25 ## hold attack this long and let go: the hammer
 @export var spin_charge_time := 0.8 ## hold attack even longer and let go: the spin (ground or air)
+@export var spin_over_time := 0.45 ## keep holding: each extra stretch this long adds a spin, up to 3, each faster
 @export var charge_speed := 5.0 ## top speed while a swing is held back
 @export var run_attack_speed := 9.0 ## attack running faster than this: the running blade
 @export var fast_blade_speed := 13.0 ## the running blade (and a surf bump) does +1 above this; only downhills get you there
@@ -91,7 +94,10 @@ extends Resource
 @export var spider_break := 30.0 ## an unhooked spider further than this from you breaks and goes back in your pack
 @export var ledge_reach := 1.2 ## a ledge top this far above your middle, as you fall against it, is caught
 @export var climb_speed := 5.0 ## up a trunk
-@export var hitstop := 0.06 ## real seconds the game freezes on a solid hit
+@export var hitstop := 0.06 ## real seconds the game freezes on a sweet-spot hit or a parry (other hits don't freeze)
+@export var hitstop_kill := 0.09 ## the freeze on a killing blow
+@export var hitstop_spike := 0.12 ## the freeze when you spike a monster out of the air
+@export var squash := 0.5 ## how far a hit squashes a monster; weak ones squash more, big ones shake the screen instead
 @export var shake_hit := 0.15 ## camera shake on a hit (metres)
 @export var dodge_slow_time := 1.5 ## a perfect dodge (hit during a roll's i-frames) slows the world this long
 @export var dodge_slow_speed := 0.3 ## how fast monsters move during that slow-motion
@@ -164,8 +170,8 @@ extends Resource
 const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", "accel", "friction", "brake", "turn_rate", "turn_rate_fast",
 	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
-	"wall_jump_up", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "hammer_hold", "spin_charge_time", "charge_speed", "run_attack_speed", "fast_blade_speed", "perfect_guard", "parry_time", "guard_speed", "guard_push", "guard_push_heavy", "guard_wall", "guard_break", "brace_time", "impale_speed", "impale_damage", "impale_stun", "stuck_time", "surf_friction", "surf_turn", "surf_min", "focus_near", "focus_far", "focus_rate", "bomb_throw_speed",
-	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "crank_ratio", "screw_notch", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_lag", "cam_recenter_delay",
+	"wall_jump_up", "wall_jump_side", "wall_coyote", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "hammer_hold", "spin_charge_time", "spin_over_time", "charge_speed", "run_attack_speed", "fast_blade_speed", "perfect_guard", "parry_time", "guard_speed", "guard_push", "guard_push_heavy", "guard_wall", "guard_break", "brace_time", "impale_speed", "impale_damage", "impale_stun", "stuck_time", "surf_friction", "surf_turn", "surf_min", "focus_near", "focus_far", "focus_rate", "bomb_throw_speed",
+	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "crank_ratio", "screw_notch", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "hitstop_kill", "hitstop_spike", "squash", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_lag", "cam_recenter_delay",
 	"seed_throw_speed", "seed_throw_up", "bomb_throw_keep", "bomb_friction", "bomb_bat_speed", "bomb_bat_up", "bomb_jump_speed", "pincer_window", "pincer_bonus", "knight_magnet_range",
 	"knight_pull_speed", "knight_open_time", "knight_push_knock", "knight_magnet_cd", "iron_plough_knock", "fire_spread_delay", "fire_damage_every",
 	"rope_skip_height", "rope_skip_width", "spider_bite_reach", "spider_bite_every", "spider_bite_damage", "spider_pilot_bite", "spider_pilot_bite_time",

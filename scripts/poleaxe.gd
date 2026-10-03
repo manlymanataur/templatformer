@@ -11,7 +11,10 @@ extends Node3D
 ##     let go after hammer_hold it comes out as the hammer: it staggers, breaks shields and armour, and spikes
 ##     airborne monsters down. Its centre (HAMMER_BAND) is the sweet spot: +2.
 ##   Spin: hold even longer (spin_charge_time) and let go for a whirl all around you, on the ground or in the
-##     air (a charge carries through a jump, and a spin in the air slows your fall).
+##     air (a charge carries through a jump, and a spin in the air slows your fall). Keep holding to overcharge:
+##     each spin_over_time adds a spin, up to 3, each faster than the last (SPIN_DURS), and the head glows a
+##     step brighter for each (jovi, 2026-10-03).
+## Swinging through a parryable shot (a caster's orb) sends it back; see Orb.reflect.
 ## After a hit connects you can cancel the rest of the swing into the next attack. There is no whiff penalty.
 ## A perfect guard (see Player) makes your next sweet-spot hit +2 and a stagger.
 ## Wearing the lit candle hat sets the poleaxe on fire: every move also sets alight whatever it sweeps
@@ -41,6 +44,8 @@ const MOVES := {
 }
 const COMBO := ["thrust", "thrust2", "sweep"]
 const HOLDABLE := ["thrust", "thrust2", "sweep", "run"] ## these freeze at the end of their startup while you hold attack
+const SPIN_DURS := [0.55, 0.4, 0.3] ## an overcharged spin whirls again, faster each time
+const SPIN_MAX := 3
 
 var player: Player
 var busy := 0.0
@@ -52,6 +57,10 @@ var button := false ## the attack button is down (the player sets it each frame)
 var charge := 0.0 ## how long attack has been held since the press that started this move
 var frozen := false ## held at the end of the startup, waiting for you to let go
 var stuck_t := 0.0 ## after a brace impales something the poleaxe is stuck in it for a moment
+var cur_dur := 0.0 ## this swing's length (spins get shorter as they chain)
+var spins_left := 0 ## overcharged spins still to come after this one
+var spin_k := 0 ## which spin of the chain this is (0 first)
+var last_sweet := false ## the last strike landed a sweet spot (it freezes the game; plain hits don't)
 var _hit: Array = []
 var _shaft: Node3D
 var _tip_mat: StandardMaterial3D
@@ -123,21 +132,25 @@ func flash() -> void:
 
 func start(m: String) -> void:
 	move = m
-	busy = MOVES[m]["dur"]
+	if m != "spin":
+		spin_k = 0
+		spins_left = 0
+	cur_dur = float(SPIN_DURS[mini(spin_k, SPIN_MAX - 1)]) if m == "spin" else float(MOVES[m]["dur"])
+	busy = cur_dur
 	queued = false
 	frozen = false
 	_hit.clear()
 	move_started.emit(m)
 
 func _elapsed() -> float:
-	return float(MOVES[move]["dur"]) - busy
+	return cur_dur - busy
 
-## How far into its charge the held swing is: 0 none, 1 hammer, 2 spin.
+## How far into its charge the held swing is: 0 none, 1 hammer, 2 to 4 a spin of 1 to 3 whirls.
 func charge_level() -> int:
 	if not frozen:
 		return 0
 	if charge >= player.t.spin_charge_time:
-		return 2
+		return 2 + mini(floori((charge - player.t.spin_charge_time) / player.t.spin_over_time), SPIN_MAX - 1)
 	return 1 if charge >= player.t.hammer_hold else 0
 
 func _physics_process(dt: float) -> void:
@@ -147,6 +160,7 @@ func _physics_process(dt: float) -> void:
 	var lvl := charge_level()
 	_tip_mat.emission_enabled = lvl > 0
 	_tip_mat.emission = (Color(1.0, 0.8, 0.4) if lvl == 1 else Color(0.6, 0.8, 1.0)) * 2.0
+	_tip_mat.emission_energy_multiplier = 1.0 + 1.5 * maxi(lvl - 2, 0) # brighter for each extra spin
 	if busy <= 0.0:
 		since_end += dt
 		_shaft.position = Vector3.ZERO
@@ -160,9 +174,12 @@ func _physics_process(dt: float) -> void:
 			_animate(0.0)
 			return
 		# let go: the swing goes on, or turns into the hammer or the spin
+		var lvl_now := charge_level()
 		frozen = false
 		if charge >= player.t.spin_charge_time:
+			spin_k = 0
 			start("spin")
+			spins_left = lvl_now - 2
 			combo_step = 0
 			return
 		if charge >= player.t.hammer_hold:
@@ -173,12 +190,19 @@ func _physics_process(dt: float) -> void:
 		frozen = true
 		return
 	busy -= dt
-	var dur: float = def["dur"]
+	var dur := cur_dur
 	var t := dur - busy
 	_animate(clampf(t / dur, 0.0, 1.0))
 	if move == "spin" and not player.is_on_floor():
 		player.velocity.y = maxf(player.velocity.y, -3.0) # a whirl in the air hangs
 	if busy <= 0.0:
+		if move == "spin" and spins_left > 0:
+			# overcharged: whirl again, faster
+			var left := spins_left - 1
+			spin_k += 1
+			start("spin")
+			spins_left = left
+			return
 		since_end = 0.0
 		if queued and combo_step != 0:
 			queued = false
@@ -186,7 +210,8 @@ func _physics_process(dt: float) -> void:
 			combo_step = (combo_step + 1) % COMBO.size()
 			charge = 0.0
 		return
-	if t < def["from"] or t > def["to"]:
+	var f := dur / float(def["dur"]) # a faster spin's active window shrinks with it
+	if t < float(def["from"]) * f or t > float(def["to"]) * f:
 		return
 	_hit_query(def)
 	if player.candle_lit:
@@ -256,7 +281,19 @@ func _hit_query(def: Dictionary) -> void:
 		if c != null and c.is_in_group("hurtable") and not _hit.has(c):
 			_hit.append(c)
 			var dealt := strike(c, def)
-			Hitfx.hit(get_tree(), (c as Node3D).global_position, player.t, 1.3 if dealt > 1 else 1.0)
+			Hitfx.hit(get_tree(), (c as Node3D).global_position, player.t, 1.3 if dealt > 1 else 1.0, c, player.t.hitstop if last_sweet else 0.0)
+	# shots you can parry aren't bodies: check them against the hit shape by hand
+	for n in get_tree().get_nodes_in_group("parryable"):
+		var o := n as Node3D
+		var inside := false
+		if def.has("sphere"):
+			inside = o.global_position.distance_to(player.global_position) < float(def["sphere"])
+		else:
+			var local: Vector3 = q.transform.affine_inverse() * o.global_position
+			var half: Vector3 = def["box"] / 2.0
+			inside = absf(local.x) < half.x and absf(local.y) < half.y and absf(local.z) < half.z
+		if inside:
+			o.reflect(player, o.global_position.distance_to(player.global_position) < 2.0)
 
 ## One hit on c: work out the sweet spot and what the move does to it.
 func strike(c: Node, def: Dictionary) -> int:
@@ -291,6 +328,7 @@ func strike(c: Node, def: Dictionary) -> int:
 		dmg += 2 # a sweet spot right after a perfect guard
 		stagger = true
 		player.parry_t = 0.0
+	last_sweet = sweet
 	var air := not player.is_on_floor()
 	if air:
 		player.velocity.y = maxf(player.velocity.y, 4.0) # hitting in the air holds you up for the next
@@ -298,4 +336,5 @@ func strike(c: Node, def: Dictionary) -> int:
 		c.hurt(dmg, player.global_position)
 		return dmg
 	return c.strike(dmg, player.global_position, {"head": head, "knock": knock, "launch": def.get("launch", false) and not air, "lift": player.t.launch_up,
-		"spike": def.get("spike", false), "stagger": stagger, "air": air, "sweet": sweet})
+		"spike": def.get("spike", false), "stagger": stagger, "air": air, "sweet": sweet,
+		"spin": move == "spin", "fire": player.candle_lit})

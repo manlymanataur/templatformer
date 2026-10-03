@@ -88,7 +88,7 @@ static func build(lv: Node3D) -> void:
 	# the wall court
 	rect.call(-86, -58, -64, -63, 0, 4, STONE)
 	station(lv, Vector3(-72, 0, -50), [["rusher", false, Vector3(-72, 0.6, -44)], ["shield", false, Vector3(-64, 0.6, -52)],
-		["brute", false, Vector3(-80, 0.6, -54)], ["archer", false, Vector3(-62, 0.6, -46)]])
+		["brute", false, Vector3(-80, 0.6, -54)], ["archer", false, Vector3(-62, 0.6, -46)], ["caster", false, Vector3(-64, 0.6, -40)]])
 	lv.label(Vector3(-72, 5.5, -62), "brace (guard, stand still) against the rusher, or let it hit the wall", 32)
 	marks["combat_court"] = Vector3(-72, 0.6, -55)
 	SpiderPens.build(lv) # the spider & lash pens, south of the yard
