@@ -41,6 +41,8 @@ var ai_guard := false ## holds the guard button
 var _ai_jump_prev := false
 
 var coyote := 0.0
+var _wall_n := Vector3.ZERO ## the last wall you were on, for a late wall jump (wall_coyote)
+var _wall_t := 0.0
 var buffer := 0.0
 var jumping := false
 var target: Node3D = null
@@ -639,15 +641,15 @@ func _guard(from: Vector3, by: Node, heavy: bool) -> bool:
 		if is_instance_valid(by):
 			(by as Monster).stun = maxf((by as Monster).stun, t.impale_stun)
 		poleaxe.stuck_t = t.stuck_time
-		Hitfx.hit(get_tree(), (by as Node3D).global_position if is_instance_valid(by) else from, t, 1.6)
+		Hitfx.hit(get_tree(), (by as Node3D).global_position if is_instance_valid(by) else from, t, 1.6, by, t.hitstop)
 		return true
 	if guard_t < t.perfect_guard:
 		parry_t = t.parry_time
-		if by is Arrow:
-			(by as Arrow).reflect()
+		if by != null and by.has_method("reflect"):
+			by.reflect(self, true) # arrows and orbs fly back (at your lock-on target, if you have one)
 		elif by != null and by.has_method("parried"):
 			by.parried()
-		Hitfx.hit(get_tree(), global_position + dir * 0.6, t, 1.2)
+		Hitfx.hit(get_tree(), global_position + dir * 0.6, t, 1.2, null, t.hitstop)
 		return true
 	var push := t.guard_push_heavy if heavy else t.guard_push
 	if heavy:
@@ -915,6 +917,7 @@ func _read_tap(dt: float, wish: Vector3) -> void:
 
 func _ground_step(dt: float, wish: Vector3) -> void:
 	coyote = t.coyote_time
+	_wall_t = 0.0
 	if _vault_hold > 0.0:
 		# still holding the stick the way you climbed: stay on top until you let go or steer another way
 		_vault_hold -= dt
@@ -983,10 +986,16 @@ func _air_step(dt: float, wish: Vector3, jump_held: bool) -> void:
 		wn = wn.normalized()
 	if wall and velocity.y < 0.0 and wish.dot(-wn) > 0.3 and carrying == null and held_seed == null and _grab_ledge(wn):
 		return
+	_wall_t -= dt
+	if wall:
+		_wall_n = wn
+		_wall_t = t.wall_coyote
 	if wall and buffer > 0.0:
-		_wall_jump(wn)
+		_wall_jump(wn, wish)
 	elif buffer > 0.0 and coyote > 0.0:
 		_ground_jump(Vector3.UP)
+	elif buffer > 0.0 and _wall_t > 0.0:
+		_wall_jump(_wall_n, wish) # just left the wall: still counts
 	elif wall and velocity.y < -t.wall_slide_speed and wish.dot(-wn) > 0.3:
 		velocity.y = -t.wall_slide_speed
 	if jumping and not jump_held and velocity.y > t.jump_cut:
@@ -1023,9 +1032,17 @@ func _ground_jump(n: Vector3) -> void:
 	coyote = 0.0
 	land_time = 99.0
 
-func _wall_jump(wn: Vector3) -> void:
-	velocity = wn * t.wall_jump_speed + Vector3.UP * t.wall_jump_up
-	facing = wn
+## Kick off the wall. Holding the stick along the wall angles the jump that way (wall_jump_side), and half the
+## speed you had along the wall carries on.
+func _wall_jump(wn: Vector3, wish := Vector3.ZERO) -> void:
+	var side := wish - wn * wish.dot(wn)
+	side.y = 0.0
+	var along := Vector3(velocity.x, 0, velocity.z)
+	along -= wn * along.dot(wn)
+	var h := wn * t.wall_jump_speed + side * t.wall_jump_side + along * 0.5
+	velocity = h + Vector3.UP * t.wall_jump_up
+	facing = h.normalized()
+	_wall_t = 0.0
 	jumping = true
 	buffer = 0.0
 	wall_lock = 0.18
@@ -1424,7 +1441,7 @@ func _surf_step(dt: float, wish: Vector3) -> void:
 		if d.length() < radius() + 1.0 and v.length() > 4.0 and now - int(_surf_hit.get(mn.get_instance_id(), -100000)) > 500:
 			_surf_hit[mn.get_instance_id()] = now
 			mn.strike(1 + (1 if v.length() > t.fast_blade_speed else 0), global_position, {"head": "shield", "knock": v.length() * 0.8, "above": true})
-			Hitfx.hit(get_tree(), mn.global_position, t, 1.0)
+			Hitfx.hit(get_tree(), mn.global_position, t, 1.0, mn)
 	if buffer > 0.0:
 		_ground_jump(n)
 
@@ -1437,7 +1454,7 @@ func _surf_pogo() -> void:
 		var d := node.global_position - global_position
 		if d.y < -0.2 and d.y > -(radius() + 1.3) and Vector2(d.x, d.z).length() < radius() + 0.8:
 			node.strike(2, global_position, {"head": "shield", "knock": 3.0, "above": true, "air": true})
-			Hitfx.hit(get_tree(), node.global_position, t, 1.3)
+			Hitfx.hit(get_tree(), node.global_position, t, 1.3, node)
 			velocity = Vector3(velocity.x, t.pogo_speed, velocity.z)
 			global_position.y = maxf(global_position.y, node.global_position.y + radius() + 0.7)
 			_pogo_last = node
@@ -1510,7 +1527,7 @@ func _pound_step(dt: float, on_floor: bool, wish: Vector3) -> void:
 				(node as Monster).strike(2, global_position, {"head": "pound", "spike": true, "above": true, "knock": 4.0})
 			elif node.is_in_group("hurtable"):
 				node.hurt(2, global_position)
-			Hitfx.hit(get_tree(), node.global_position, t, 1.4)
+			Hitfx.hit(get_tree(), node.global_position, t, 1.4, node)
 			velocity = Vector3.UP * t.pogo_speed * 1.2
 			global_position.y = maxf(global_position.y, node.global_position.y + radius() + 0.6)
 			_pogo_last = node
@@ -1592,7 +1609,7 @@ func _homing_step(dt: float) -> void:
 				(homing as Monster).strike(2, global_position, {"head": "blade", "air": true, "knock": 5.0})
 			else:
 				homing.hurt(2, global_position)
-		Hitfx.hit(get_tree(), homing.global_position, t, 1.2)
+		Hitfx.hit(get_tree(), homing.global_position, t, 1.2, homing)
 		# you strike it and come off its top, even if you flew in from below
 		var over := homing.global_position + Vector3.UP * (radius() + 0.8)
 		var q := PhysicsRayQueryParameters3D.create(homing.global_position, over + Vector3.UP * radius(), 1, [get_rid(), homing.get_rid()] if homing is CollisionObject3D else [get_rid()])

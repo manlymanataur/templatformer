@@ -1,9 +1,12 @@
 class_name Arrow
 extends Node3D
-## An archer's arrow. It flies straight and hurts you on touch (a block stops it). A perfect guard sends it
-## back the way it came, and then it hits monsters instead.
+## An archer's arrow. It flies straight and fast (Monster.ARROW_SPEED) and hurts you on touch (a block stops it).
+## A perfect guard sends it back faster and harder at whoever shot it, or at your lock-on target, and then it
+## hits monsters instead.
 
 const DAMAGE := 1
+const BACK_DAMAGE := 3
+const BACK_SPEED := 1.6 ## times faster once reflected
 const LIFE := 3.0
 
 var vel := Vector3.ZERO
@@ -36,13 +39,19 @@ func _aim() -> void:
 	if vel.length() > 0.01:
 		look_at(global_position + vel, Vector3.UP if absf(vel.normalized().y) < 0.95 else Vector3.RIGHT)
 
-## A perfect guard: back at whoever shot it, a little faster.
-func reflect() -> void:
+## A perfect guard: at your lock-on target if you have one, else back at whoever shot it, faster.
+func reflect(p: Player = null, perfect := true) -> void:
+	if reflected:
+		return
 	reflected = true
-	var back := -vel * 1.2
-	if shooter != null and is_instance_valid(shooter):
-		back = (shooter.global_position - global_position).normalized() * vel.length() * 1.2
-	vel = back
+	var sp := vel.length() * BACK_SPEED
+	var aim: Node3D = null
+	if perfect and p != null and p.target != null and is_instance_valid(p.target) and p.target != shooter:
+		aim = p.target
+	elif shooter != null and is_instance_valid(shooter):
+		aim = shooter
+	vel = (aim.global_position - global_position).normalized() * sp if aim != null else -vel.normalized() * sp
+	_life = LIFE
 	_aim()
 
 func _physics_process(dt: float) -> void:
@@ -53,16 +62,20 @@ func _physics_process(dt: float) -> void:
 		return
 	var to := global_position + vel * dt
 	var q := PhysicsRayQueryParameters3D.create(global_position, to, 1)
-	if not get_world_3d().direct_space_state.intersect_ray(q).is_empty():
-		queue_free()
-		return
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		if reflected and hit.collider is Monster:
+			_strike(hit.collider as Monster)
+			return
+		if not (hit.collider is CharacterBody3D):
+			queue_free()
+			return
 	global_position = to
 	if reflected:
 		for n in get_tree().get_nodes_in_group("monsters"):
 			var m := n as Monster
-			if m.global_position.distance_to(global_position) < 0.9:
-				m.strike(2, global_position - vel.normalized(), {"stagger": true, "knock": 6.0})
-				queue_free()
+			if m.global_position.distance_to(global_position) < m._r + 0.35:
+				_strike(m)
 				return
 		return
 	for n in get_tree().get_nodes_in_group("player"):
@@ -72,3 +85,7 @@ func _physics_process(dt: float) -> void:
 			if not reflected:
 				queue_free()
 			return
+
+func _strike(m: Monster) -> void:
+	m.strike(BACK_DAMAGE, global_position - vel.normalized(), {"stagger": true, "knock": 7.0})
+	queue_free()
