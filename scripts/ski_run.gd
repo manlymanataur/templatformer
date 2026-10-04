@@ -3,8 +3,10 @@ extends Node3D
 ## The ski run (jovi, 2026-10-04): a practice mountain west of everything (x -230..-170, z -220 down to about
 ## 400), floating on its own. Skiing is the shield surf: hold guard on snow to drop in. One long run, top to
 ## bottom, a station per idea (marks and warps ski_<name>):
-##   start     flat top, the poleaxe & shield to pick up
-##   gates     15°: four slalom gates (through adds speed, a miss costs it). Weave to fill the carve meter.
+##   start     flat top, the poleaxe & shield and the lash to pick up
+##   lash      10°: a chicane of two rock walls with a post just below each one's end. Through the gap, lash the
+##             post (skiing, the lash finds a post beside your line) and swing round the wall's end keeping your
+##             speed; the lash again lets go. Carve it instead and the turn costs you
 ##   trees     18°: trunks in the lane; clip one and you stumble
 ##   boost     a boost pad on a flat, then two tilted (off-camber) stretches, one each way: carve against the tilt
 ##   gap       a 20° tuck run to a 10 m rock gap: pop a jump at the lip
@@ -14,7 +16,7 @@ extends Node3D
 ##   rail      a fallen-trunk grind rail down the left of a 12° slope
 ##   cliff     a 7 m drop onto a 30° slope (it keeps your speed), then a runout
 ##   launch    a launch pad over a 14 m gap onto a landing slope
-##   fork      a ridge splits the lane: left is fast with a snow bridge (cross it fast), right has gates and monsters
+##   fork      a ridge splits the lane: left is fast with a snow bridge (cross it fast), right has monsters
 ##   finish    the flat bottom with a lash post: lash it skiing and swing round the hairpin
 ## Fall off (a gap, a cliff, the launch) and you're put back at the last station you reached.
 
@@ -117,6 +119,7 @@ func tree(at: Vector3) -> void:
 	crown.position.y = 3.5
 	trunk.add_child(crown)
 	trunk.add_to_group("ski_stumble")
+	trunk.add_to_group("trees")
 	lv.add_child(trunk)
 	trunk.global_position = at + Vector3.UP * 2.5
 
@@ -150,17 +153,21 @@ func _build() -> void:
 	z -= 16
 	station("start", "Ski run: hold guard (C) on snow to ski.\nStick sideways steers, forward tucks, back brakes.")
 	Pickup.spawn(lv, "poleaxe", 1, Vector3(X + 3, y + 0.8, z + 4))
+	Pickup.spawn(lv, "lash", 1, Vector3(X - 3, y + 0.8, z + 4))
 	z += 16
 	m["ski_top"] = TOP
 
-	# gates: weave through four slalom gates down 15°
-	station("gates", "Gates: through for speed, a miss costs it.\nHold a turn, then let go: the carve pays out.")
-	for k in 4:
-		var dx := -4.0 if k % 2 == 0 else 4.0
-		var c := on_slope(12.0 + k * 14.0, dx, 15.0)
-		SkiGate.make(lv, c + Vector3(-2.5, 0, 0), c + Vector3(2.5, 0, 0), k % 2 == 0)
-	m["ski_gate_first"] = on_slope(12.0, -4.0, 15.0)
-	seg(70, 15)
+	# lash: a chicane. Each wall closes most of the lane; lash the post at its tip and swing round into the gap.
+	station("lash", "Lash (slot it) the post at the wall's end while skiing:\nyou swing round it. Lash again to let go.")
+	for k in 2:
+		var sd := 1.0 if k == 0 else -1.0 # which side the opening is on
+		var dz := 24.0 + k * 26.0
+		var wall_c := on_slope(dz, -sd * 3.0, 10.0)
+		lv.box(wall_c + _basis(10) * Vector3(0, 1.5, 0), Vector3(14.0, 3.0, 1.0), _basis(10), ROCK)
+		var tip := post(on_slope(dz + 1.6, sd * 4.6, 10.0)) # just below the wall's end
+		m["ski_lash_post%d" % k] = tip.global_position
+	m["ski_lash_run"] = on_slope(12.0, 7.0, 10.0) + Vector3.UP * 0.8 # in the first wall's gap
+	seg(70, 10)
 
 	# trees: a slalom between trunks down 18°
 	station("trees", "Trees: clip one and you stumble.")
@@ -242,8 +249,8 @@ func _build() -> void:
 	seg(28, 20)
 	seg(10, 6)
 
-	# fork: a ridge splits the lane. Left: fast, over a snow bridge you must cross fast. Right: gates and monsters.
-	station("fork", "Fork: left is fast over a snow bridge (don't stop on it).\nRight has gates and monsters.", -5.5)
+	# fork: a ridge splits the lane. Left: fast, over a snow bridge you must cross fast. Right: monsters.
+	station("fork", "Fork: left is fast over a snow bridge (don't stop on it).\nRight has monsters.", -5.5)
 	var z0 := z
 	var y0 := y
 	var deg := 14.0
@@ -267,9 +274,6 @@ func _build() -> void:
 	z = z0
 	y = y0
 	m["ski_fork_right"] = on_slope(2, 5.5, deg) + Vector3.UP * 0.6
-	for k in 2:
-		var c := on_slope(12.0 + k * 18.0, 5.5 + (-1.5 if k == 0 else 1.5), deg)
-		SkiGate.make(lv, c + Vector3(-2.0, 0, 0), c + Vector3(2.0, 0, 0), k == 0)
 	var monsters := []
 	for k in 3:
 		monsters.append(["blob", false, on_slope(20.0 + k * 9.0, 5.5 + (k - 1) * 2.5, deg) + Vector3.UP * 0.7])

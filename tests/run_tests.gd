@@ -48,6 +48,13 @@ func _run() -> void:
 	for pk in get_nodes_in_group("pickups"):
 		pk.queue_free()
 	await frames(5)
+	var only := OS.get_environment("TESTS_ONLY") # e.g. TESTS_ONLY=_mountain_tests: run just those groups
+	if only != "":
+		for fn in only.split(","):
+			await Callable(self, fn).call()
+		print("%d failed" % fails)
+		quit(1 if fails else 0)
+		return
 	await _rules_tests() # first, before any test moves iron or opens gates
 
 	# 1. Standing jump height matches jump_speed^2 / 2g
@@ -74,7 +81,8 @@ func _run() -> void:
 	for i in 60:
 		await physics_frame
 		top = maxf(top, p.global_position.y)
-	check("short hop is lower than full jump", top - y0 < want * 0.6, "%.2f m" % (top - y0))
+	check("a 3-frame tap hops %.2f m (jump_cut %.1f, jovi: a much harder cut), under a third of the full %.1f m" % [top - y0, t.jump_cut, want],
+		top - y0 < want / 3.0, "%.2f m" % (top - y0))
 
 	# 3. Reach top speed on flat ground
 	await place(Vector3(70, 0.6, -60))
@@ -342,6 +350,8 @@ func _combat_tests() -> void:
 	await _poleaxe_tests()
 	await _impact_tests()
 	await _ski_tests()
+	await _ski_feedback_tests()
+	await _mountain_tests()
 	await _works_tests(arena)
 	await _powers_tests()
 	await _cellar_tests()
@@ -1532,7 +1542,7 @@ func _rootworks_tests(arena: Vector3) -> void:
 	p.ai_jump = true
 	await frames(12)
 	p.ai_move = Vector2(0, -1)
-	await frames(30)
+	await frames(16)
 	p.ai_jump = false
 	p.ai_move = Vector2.ZERO
 	await frames(30)
@@ -1549,7 +1559,7 @@ func _plants_tests(arena: Vector3) -> void:
 	# P2. The moves yard's vines: the lash pulls you to them, the candle burns them, and they grow back
 	var vine: Burnable = null
 	for n in get_nodes_in_group("plant_vine"):
-		if (n as Burnable).regrow > 0.0:
+		if (n as Burnable).regrow > 0.0 and (n as Burnable).global_position.distance_to(m["moves_climb"]) < 10.0:
 			vine = n
 	await _fresh_player(m["moves_climb"])
 	p.inventory.add("lash")
@@ -1844,8 +1854,18 @@ func _moves_yard_tests(arena: Vector3) -> void:
 		hung and p.global_position.y > ledge + 0.3, "hung %s, ended y %.1f" % [hung, p.global_position.y])
 	# iron stays smooth: see test 49, a double jump still can't get over it
 
-	# 70. Walk onto the rail: grinding 4 m downhill builds speed and the kicker throws you across a 10 m gap
+	# 70. Walk onto the rail on your shield: grinding 4 m downhill builds speed and the kicker throws you across a
+	# 10 m gap. Without the shield up you walk past it (only the shield surf grinds, jovi 2026-10-04).
 	await _fresh_player(m["moves_rail"])
+	p.ai_move = Vector2(0, -1)
+	var caught_bare := false
+	for i in 40:
+		await physics_frame
+		caught_bare = caught_bare or p.rail != null
+	check("without the shield up you don't grind", not caught_bare, "caught the rail bare-handed")
+	await _fresh_player(m["moves_rail"])
+	p.inventory.add("poleaxe")
+	p.ai_guard = true
 	p.ai_move = Vector2(0, -1)
 	var fastest := 0.0
 	var ground := false
@@ -1859,6 +1879,7 @@ func _moves_yard_tests(arena: Vector3) -> void:
 	p.ai_move = Vector2.ZERO
 	var land: float = m["moves_rail_land"]
 	var want := sqrt(t.rail_min_speed * t.rail_min_speed + 2.0 * t.gravity * 4.0)
+	p.ai_guard = false
 	check("a 4 m downhill rail builds you to %.0f m/s" % want, ground and absf(fastest - want) < 1.5, "grinding at %.1f m/s" % fastest)
 	check("the rail's kicker throws you across the 10 m gap", p.global_position.z < land - 0.3 and p.global_position.y > 2.3,
 		"landed z %.1f y %.1f, platform from z %.0f at 2 m" % [p.global_position.z, p.global_position.y, land])
@@ -2183,12 +2204,15 @@ func _challenge_tests(arena: Vector3) -> void:
 	var c: Challenge = m["challenge_rail"]
 	await _enter_room(c)
 	var entered := c.inside and p.global_position.distance_to(c.start) < 1.0
+	p.inventory.add("poleaxe")
+	p.ai_guard = true
 	p.ai_move = Vector2(0, -1)
 	for i in 900:
 		await physics_frame
 		if c.cleared:
 			break
 	p.ai_move = Vector2.ZERO
+	p.ai_guard = false
 	check("a door takes you in; the rail run's two rails and 10 m gaps reach the star", entered and c.cleared and not c.inside
 		and p.global_position.distance_to(c.door_at) < 3.5, "entered %s, cleared %s, back by the door %s" % [entered, c.cleared, p.global_position.distance_to(c.door_at) < 3.5])
 
@@ -2209,6 +2233,9 @@ func _challenge_tests(arena: Vector3) -> void:
 			jumped = true
 		elif p.ai_jump and p.velocity.y < 0.0:
 			p.ai_jump = false
+		if bounces == 4 and z < c.goal.z + 2.0:
+			# over the far platform: pull back on the stick to stop over it, then let go
+			p.ai_move = Vector2(0, 1) if p.velocity.z < -0.5 and not p.is_on_floor() else Vector2.ZERO
 		if p.pound_t < 0.0 and not p.is_on_floor() and bounces < 4 and absf(z - spikes[bounces]) < 0.6:
 			p.ai_attack = true
 			bounces += 1
@@ -3099,6 +3126,7 @@ func _ski(pos: Vector3, vel: Vector3) -> void:
 	await _fresh_player(pos)
 	p.inventory.add("poleaxe")
 	p.ai_guard = true
+	p._stumble_t = 0.0
 	p.velocity = vel
 	await physics_frame
 	p.velocity = vel
@@ -3107,7 +3135,364 @@ func _ski(pos: Vector3, vel: Vector3) -> void:
 func _speed() -> float:
 	return p.velocity.length()
 
-## Skiing (jovi, 2026-10-04): the shield surf with carving, tuck, brake, pop, spins, landings, gates, trees,
+## jovi's ski feedback (2026-10-04): walking grip, ice underfoot, air control, rails for the shield surf only and
+## sliding back down when they stall, fewer speed lines at low speed, tree-to-tree wall jumps and the lash chicane.
+func _ski_feedback_tests() -> void:
+	var t: Tuning = level.t
+	var m: Dictionary = level.marks
+	var o := Vector3(900, 60, 0)
+	_snow_slope(o, 60, 0, 30, "stone")
+	_snow_slope(o + Vector3(40, 0, 0), 60, 0, 30, "ice")
+
+	# F1. Walking grips: from top speed, let go and you stop within 2 m; a full turnaround takes under 0.5 s
+	await _fresh_player(o + Vector3(0, 0.6, 4))
+	p.ai_move = Vector2(0, 1)
+	await frames(60)
+	var z0 := p.global_position.z
+	p.ai_move = Vector2.ZERO
+	await frames(60)
+	var stop := p.global_position.z - z0
+	await _fresh_player(o + Vector3(0, 0.6, 4))
+	p.ai_move = Vector2(0, 1)
+	await frames(60)
+	p.ai_move = Vector2(0, -1)
+	var turn_t := 0.0
+	while p.velocity.z > -t.top_speed * 0.9 and turn_t < 2.0:
+		await physics_frame
+		turn_t += 1.0 / 60.0
+	p.ai_move = Vector2.ZERO
+	check("walking grips (jovi: it felt slidey): from %.0f m/s you stop in %.1f m and turn round to full speed in %.2f s" % [t.top_speed, stop, turn_t],
+		stop < 2.0 and turn_t < 0.5, "stop %.2f m, turnaround %.2f s" % [stop, turn_t])
+
+	# F2. Ice underfoot when walking: you slide (stop distance x1/ice_grip) and turn wide
+	await _fresh_player(o + Vector3(40, 0.6, 4))
+	p.ai_move = Vector2(0, 1)
+	await frames(150)
+	var ice_z0 := p.global_position.z
+	var ice_v := p.velocity.z
+	p.ai_move = Vector2.ZERO
+	for i in 240:
+		await physics_frame
+		if p.velocity.length() < 0.1:
+			break
+	var ice_stop := p.global_position.z - ice_z0
+	await _fresh_player(o + Vector3(40, 0.6, 4))
+	p.ai_move = Vector2(0, 1)
+	await frames(150)
+	p.ai_move = Vector2(1, 0)
+	await frames(15)
+	var ice_turn := rad_to_deg(Vector2(0, 1).angle_to(Vector2(p.velocity.x, p.velocity.z)))
+	p.ai_move = Vector2.ZERO
+	check("walking on ice: from %.0f m/s you slide %.1f m before stopping (%.1f on stone), and a quarter-turn of the stick swings you only %.0f° in 0.25 s" % [ice_v, ice_stop, stop, ice_turn],
+		ice_stop > stop * 4.0 and absf(ice_turn) < 45.0 and ice_v > t.top_speed - 0.5, "slide %.1f m, turned %.0f°, reached %.1f m/s" % [ice_stop, ice_turn, ice_v])
+
+	# F3. Air control: the stick held square to your drift swings it round (air_turn) rather than drifting on
+	await _fresh_player(o + Vector3(0, 0.6, 4))
+	p.ai_move = Vector2(0, 1)
+	await frames(60)
+	p.ai_jump = true
+	await frames(2)
+	p.ai_move = Vector2(1, 0)
+	await frames(18)
+	var air_turned := rad_to_deg(Vector2(0, 1).angle_to(Vector2(p.velocity.x, p.velocity.z)))
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	await frames(40)
+	check("mid-air, the stick held square to a %.0f m/s jump swings it %.0f° in 0.3 s" % [t.top_speed, absf(air_turned)], absf(air_turned) > 50.0, "turned %.0f°" % air_turned)
+
+	# F4. Rails are for the shield surf, and stall going uphill and you slide back down
+	var r0 := o + Vector3(80, 0.3, 4)
+	var r1 := o + Vector3(80, 6.3, 34)
+	_snow_slope(o + Vector3(80, 0, -10), 14, 0, 6, "stone")
+	var rail := Rail.make(level, PackedVector3Array([r0, r1]))
+	await _fresh_player(r0 + Vector3(0, 0.5, -3))
+	p.inventory.add("poleaxe")
+	p.ai_guard = true
+	p.ai_move = Vector2(0, 1)
+	var caught := false
+	var top_s := 0.0
+	var turned_back := false
+	var off_bottom := false
+	for i in 400:
+		await physics_frame
+		if p.rail != null:
+			caught = true
+			p.ai_move = Vector2.ZERO
+			top_s = maxf(top_s, p.rail_s)
+			if p.rail_dir < 0.0:
+				turned_back = true
+		if caught and p.rail == null:
+			off_bottom = p.global_position.z < r0.z + 1.0
+			break
+	var want_s := t.rail_min_speed * t.rail_min_speed / (2.0 * t.gravity) / sin(atan2(6.0, 30.0))
+	check("shield up, you grind up a rail at %.0f m/s, stall %.1f m along (expected %.1f) and slide back down off the bottom" % [t.rail_min_speed, top_s, want_s],
+		caught and turned_back and off_bottom and absf(top_s - want_s) < 1.5, "caught %s, reversed %s, off the bottom %s, top %.1f" % [caught, turned_back, off_bottom, top_s])
+	await _fresh_player(r0 + Vector3(0, 0.5, -3))
+	p.inventory.add("poleaxe")
+	p.ai_guard = true
+	p.ai_move = Vector2(0, 1)
+	var dropped := false
+	caught = false
+	for i in 200:
+		await physics_frame
+		if p.rail != null and not caught:
+			caught = true
+			p.ai_guard = false # let go of the shield
+		if caught and p.rail == null:
+			dropped = true
+			break
+	check("letting go of guard drops you off the rail", caught and dropped, "caught %s, dropped %s" % [caught, dropped])
+	p.ai_move = Vector2.ZERO
+	rail.queue_free()
+
+	# F5. Speed lines: none until speed_lines_from of the way to boost speed, then a few, filling in toward it
+	var lc := [CameraRig.line_count(0.2, t.speed_lines_from), CameraRig.line_count(t.speed_lines_from + 0.05, t.speed_lines_from),
+		CameraRig.line_count(0.7, t.speed_lines_from), CameraRig.line_count(1.0, t.speed_lines_from)]
+	check("speed lines: none at 20%% of the way to boost speed (they start at %.0f%%), %d just past it, %d at 70%%, %d at full" % [t.speed_lines_from * 100.0, lc[1], lc[2], lc[3]],
+		lc[0] == 0 and lc[1] <= 8 and lc[2] < lc[3] and lc[3] == CameraRig.LINES, "%s" % [lc])
+
+	# F6. Tree to tree: cling to a trunk whatever the stick says, and a kick aims at the next tree
+	var ta: Vector3 = m["mountain_tree_l"]
+	var tb: Vector3 = m["mountain_tree_r"]
+	await _fresh_player(ta + Vector3(1.4, 0.6, 0))
+	p.global_position = ta + Vector3(1.4, 2.5, 0) # in the air beside the tree, drifting into it
+	p.velocity = Vector3(-4, 0, 0)
+	await frames(10)
+	var clung := p._wall_tree() != null
+	await frames(20)
+	clung = clung and p._wall_tree() != null and p.velocity.y >= -t.wall_slide_speed - 0.1
+	p.ai_move = Vector2(1, 0.4) # the stick only roughly toward the other tree
+	p.ai_jump = true
+	await frames(2)
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	var reached_b := false
+	for i in 40:
+		await physics_frame
+		if p._wall_tree() != null and p.global_position.x > ta.x + 2.0:
+			reached_b = true
+			break
+	check("you cling to a tree with the stick let go, and a wall jump off it lands on the next tree %.0f m away (aim assist within %.0f°)" % [tb.x - ta.x, t.wall_jump_aim_cone],
+		clung and reached_b, "clung %s, reached the other tree %s" % [clung, reached_b])
+
+	# F7. Lash chicane on the ski run: lash the post at the wall's end while skiing and swing round it
+	var post_at: Vector3 = m["ski_lash_post0"]
+	var run_at: Vector3 = m["ski_lash_run"]
+	await _ski(run_at, Vector3(0, -1, 12))
+	p.inventory.add("lash")
+	await frames(10)
+	p.use_lash() # straight down the gap: the lash finds the post below the wall's end
+	var hooked := p.ski_post != null
+	var speed_in := _speed()
+	var passed := false
+	for i in 120:
+		await physics_frame
+		if p.velocity.x < -3.0 and p.global_position.z > post_at.z + 1.0:
+			p.use_lash() # round the tip and heading back across: let go
+			passed = true
+			break
+	await frames(20)
+	check("skiing the lash chicane, a lash at the wall's end hooks the post and swings you round its tip at %.0f m/s (in at %.0f)" % [_speed(), speed_in],
+		hooked and passed and _speed() > speed_in * 0.8 and p.surfing, "hooked %s, round %s, %.1f m/s, skiing %s" % [hooked, passed, _speed(), p.surfing])
+	p.ai_guard = false
+
+## The mountain climb (jovi, 2026-10-04): every station up to the ski run's top, and falling puts you back.
+func _mountain_tests() -> void:
+	var t: Tuning = level.t
+	var m: Dictionary = level.marks
+
+	# M1. Base: run 20 m and triple jump up the 5 m cliff
+	await _fresh_player(m["mountain_base"])
+	p.ai_move = Vector2(0, 1)
+	var cliff1: float = m["mountain_cliff1"]
+	var jumps := 0
+	for i in 300:
+		await physics_frame
+		if p.hang != Vector3.ZERO:
+			p.ai_jump = false # hanging: the stick into the wall pulls you up
+		elif p.is_on_floor() and p.global_position.y < cliff1 and p.global_position.z > -339.0:
+			p.ai_jump = not p.ai_jump # held through the air; let go on landing, press again at once (the chain)
+			if p.ai_jump:
+				jumps += 1
+		if p.global_position.y > cliff1 + 0.3 and p.is_on_floor():
+			break
+	p.ai_move = Vector2.ZERO
+	p.ai_jump = false
+	check("mountain base: chained running jumps (and a ledge grab) get you up the %.0f m cliff" % (cliff1 - 110.0), p.global_position.y > cliff1 + 0.3, "ended y %.1f after %d jumps" % [p.global_position.y, jumps])
+
+	# M2. Trees: bounce between the two trees past the 9 m cliff, then kick onto it
+	var ta: Vector3 = m["mountain_tree_l"]
+	var cliff2: float = m["mountain_cliff2"]
+	await _fresh_player(ta + Vector3(1.4, 0.6, 0))
+	await frames(5)
+	p.ai_move = Vector2(-1, 0)
+	p.ai_jump = true # a held jump into the first tree
+	var first := true
+	var kicks := 0
+	var cool := 0
+	for i in 400:
+		await physics_frame
+		cool -= 1
+		if first:
+			if p._wall_tree() != null or p.velocity.y < 0.0:
+				first = false
+				p.ai_jump = false # let go: the next touch presses again
+				p.ai_move = Vector2.ZERO
+			continue
+		p.ai_jump = false
+		var high := p.global_position.y > cliff2 + 0.8
+		if p._wall_tree() != null and cool <= 0:
+			p.ai_move = Vector2(0, 1) if high else Vector2.ZERO # high enough: kick toward the cliff
+			p.ai_jump = true
+			kicks += 1
+			cool = 10
+		elif cool <= 0 and not high:
+			p.ai_move = Vector2.ZERO
+		if p.is_on_floor() and p.global_position.y > cliff2 - 0.2:
+			break
+	p.ai_move = Vector2.ZERO
+	check("mountain trees: %d tree-to-tree wall jumps climb the %.0f m cliff" % [kicks, cliff2 - cliff1], p.global_position.y > cliff2 + 0.3 and p.is_on_floor(),
+		"ended y %.1f z %.1f after %d kicks" % [p.global_position.y, p.global_position.z, kicks])
+
+	# M3. Chimney: wall-jump side to side up the 5 m slot
+	var cliff3: float = m["mountain_cliff3"]
+	await _fresh_player(m["mountain_slot"])
+	var side := -1.0
+	p.ai_move = Vector2(side, 0)
+	p.ai_jump = true # a held jump into the west wall
+	first = true
+	var wall_kicks := 0
+	cool = 0
+	for i in 600:
+		await physics_frame
+		cool -= 1
+		if first:
+			if p.is_on_wall() or p.velocity.y < 0.0:
+				first = false
+				p.ai_jump = false
+			continue
+		p.ai_jump = false
+		var wall := p.is_on_wall() and absf(p.get_wall_normal().x) > 0.7
+		if wall and cool <= 0:
+			side = signf(p.get_wall_normal().x)
+			p.ai_move = Vector2(side, 0.0) # toward the other wall (into it, near the top, grabs the ledge)
+			p.ai_jump = true
+			wall_kicks += 1
+			cool = 8
+		if p.is_on_floor() and p.global_position.y > cliff3 - 0.2:
+			break
+	p.ai_move = Vector2.ZERO
+	check("mountain chimney: %d wall jumps climb the %.0f m slot (6 m wide)" % [wall_kicks, cliff3 - cliff2], p.global_position.y > cliff3 + 0.3, "ended y %.1f after %d kicks" % [p.global_position.y, wall_kicks])
+
+	# M4. Vines: climb the 8 m vine face
+	var cliff4: float = m["mountain_cliff4"]
+	await _fresh_player(m["mountain_vine_foot"])
+	p.ai_move = Vector2(0, 1)
+	for i in 480:
+		await physics_frame
+		if p.global_position.y > cliff4 + 0.3 and p.is_on_floor():
+			break
+	p.ai_move = Vector2.ZERO
+	check("mountain vines: climb the %.0f m vine face" % (cliff4 - cliff3), p.global_position.y > cliff4 + 0.3, "ended y %.1f" % p.global_position.y)
+
+	# M5. Gaps: a running double jump over the 10 m gap, then a running jump over the 8 m one
+	var g1: Vector2 = m["mountain_gap1"]
+	var g2: Vector2 = m["mountain_gap2"]
+	await _fresh_player(Vector3(-209, cliff4 + 0.8, -272))
+	p.ai_move = Vector2(1, 0)
+	var hop := false
+	var hop_land := false
+	var leaps := 0
+	for i in 400:
+		await physics_frame
+		var x := p.global_position.x
+		if p.ai_jump and (hop and not hop_land or p.velocity.y < 0.0):
+			p.ai_jump = false # the hop is a tap; leaps are held to the top
+		elif not hop and p.is_on_floor() and x > g1.x - 3.0:
+			p.ai_jump = true # a tap hop just short of the lip
+			hop = true
+		elif hop and not hop_land and p.is_on_floor() and p.land_time > 0.0:
+			hop_land = true
+			p.ai_jump = true # straight back up: the chain's double jump, off the lip
+			leaps += 1
+		elif p.is_on_floor() and x > g2.x - 1.0 and x < g2.x and leaps < 2:
+			p.ai_jump = true
+			leaps += 1
+		if x > g2.y + 3.0 and p.is_on_floor():
+			break
+	p.ai_move = Vector2.ZERO
+	p.ai_jump = false
+	check("mountain gaps: a running double jump clears 10 m, a running jump 8 m", p.global_position.x > g2.y + 1.0 and p.global_position.y > cliff4,
+		"ended x %.1f y %.1f" % [p.global_position.x, p.global_position.y])
+
+	# M6. Launch pad: up 12 m onto the shelf
+	var pad: Vector3 = m["mountain_launch_pad"]
+	var cliff6: float = m["mountain_cliff6"]
+	await _fresh_player(pad + Vector3(0, 0.2, -3))
+	p.ai_move = Vector2(0, 1)
+	await frames(20)
+	p.ai_move = Vector2.ZERO
+	for i in 180:
+		await physics_frame
+		if p.is_on_floor() and p.global_position.y > cliff6:
+			break
+	check("mountain launch pad: up %.0f m onto the shelf" % (cliff6 - cliff4), p.global_position.y > cliff6 + 0.3 and p.is_on_floor(), "ended y %.1f" % p.global_position.y)
+
+	# M7. Uphill rail: shield up and the boost pad carries you up 11 m of rail onto the summit ledge
+	var rb: Vector3 = m["mountain_rail_b"]
+	await _fresh_player(m["mountain_rail"])
+	p.inventory.add("poleaxe")
+	p.ai_guard = true
+	p.ai_move = Vector2(-1, 0)
+	var ground := false
+	var fastest_end := 0.0
+	for i in 300:
+		await physics_frame
+		if p.rail != null:
+			ground = true
+			p.ai_move = Vector2.ZERO
+			fastest_end = p.rail_speed
+		if ground and p.rail == null and p.is_on_floor():
+			break
+	p.ai_guard = false
+	await frames(20)
+	check("mountain rail: shield up, the boost pad carries you %.0f m up the rail (%.1f m/s left at the top) onto the summit ledge" % [rb.y - m["mountain_rail_a"].y, fastest_end],
+		ground and p.global_position.y > rb.y - 0.5 and p.is_on_floor(), "grinded %s, ended y %.1f" % [ground, p.global_position.y])
+
+	# M8. Summit: double jump and grab the 5 m ledge onto the ski run's top
+	await _fresh_player(m["mountain_summit"])
+	p.ai_move = Vector2(0, 1)
+	var j := 0
+	for i in 300:
+		await physics_frame
+		if j == 1 and p.ai_jump:
+			p.ai_jump = false # the first is a tap hop
+		elif j == 0 and p.is_on_floor() and p.global_position.z > -253.0:
+			p.ai_jump = true
+			j = 1
+		elif j == 1 and p.is_on_floor() and p.land_time > 0.0:
+			p.ai_jump = true # the chain's double jump, held; the stick into the cliff grabs and pulls up
+			j = 2
+		if p.global_position.y > 170.3 and p.is_on_floor():
+			break
+	p.ai_jump = false
+	p.ai_move = Vector2.ZERO
+	check("mountain summit: a double jump and ledge grab reach the ski run's top (y 170)", p.global_position.y > 170.3, "ended y %.1f" % p.global_position.y)
+
+	# M9. Fall off and you're back at the last station you stood on
+	await _fresh_player(m["mountain_gaps"])
+	await frames(10)
+	p.ai_move = Vector2(1, 0) # run off the edge into the 10 m gap
+	var fell := false
+	for i in 300:
+		await physics_frame
+		fell = fell or p.global_position.y < 140.0
+		if fell and p.global_position.y > 142.0:
+			break
+	p.ai_move = Vector2.ZERO
+	check("falling into a mountain gap puts you back at its station", p.global_position.distance_to(m["mountain_gaps"]) < 1.5, "at %s" % p.global_position)
+
+## Skiing (jovi, 2026-10-04): the shield surf with carving, tuck, brake, pop, spins, landings, trees,
 ## ice, duck bars, rails, cliffs, pads, snow bridges, wind, the lash post, and the camera at speed.
 func _ski_tests() -> void:
 	var t: Tuning = level.t
@@ -3188,26 +3573,36 @@ func _ski_tests() -> void:
 		"lip %.1f, mid %.1f, lip at z %.0f" % [lip_up, mid_up, lip_z])
 	await frames(90)
 
-	# S6. Spins: a clean full spin lands with ski_trick_boost more speed than no spin; a half spin trips you
+	# S6. Spins: the stick winds a spin up and it carries on after you let go (ski_spin_drag). A clean full spin
+	# lands with ski_trick_boost more speed than no spin; a half spin trips you. Let go early enough that the
+	# coast finishes the turn.
 	var landed := []
+	var coasted := 0.0
 	var dy := 30.0 * tan(deg_to_rad(25.0))
-	for spin_frames in [0, roundi(TAU / t.ski_spin_rate * 60.0), roundi(PI / t.ski_spin_rate * 60.0)]:
+	for want in [0.0, TAU, PI]:
 		await _ski(Vector3(o.x + 80, flat_y + 0.8, 4), Vector3(0, 0, 12))
-		p.global_position = Vector3(o.x + 80, flat_y - dy + 7.0, 30)
+		p.global_position = Vector3(o.x + 80, flat_y - dy + 12.0, 30)
 		p.velocity = Vector3(0, 0, 12)
 		await physics_frame
-		if spin_frames > 0:
+		if want > 0.0:
 			p.ai_move = Vector2(1, 0)
-			await frames(spin_frames)
+			for i in 90:
+				await physics_frame
+				if absf(p.ski_spin) + p.ski_spin_v * p.ski_spin_v / (2.0 * t.ski_spin_drag) >= want:
+					break
 			p.ai_move = Vector2.ZERO
+			var let_go := absf(p.ski_spin)
+			await frames(6)
+			if want == TAU:
+				coasted = absf(p.ski_spin) - let_go
 		for i in 120:
 			await physics_frame
 			if p.is_on_floor():
 				break
 		await frames(2)
 		landed.append(_speed())
-	check("landing a clean full spin is %.1f m/s faster than no spin; landing a half spin is %.1f slower (a stumble)" % [landed[1] - landed[0], landed[0] - landed[2]],
-		landed[1] - landed[0] > t.ski_trick_boost * 0.7 and landed[2] < landed[0] * 0.8, "plain %.1f, full spin %.1f, half spin %.1f" % landed)
+	check("a spin carries on %.1f rad after you let go; landing a clean full spin is %.1f m/s faster than no spin; a half spin is %.1f slower (a stumble)" % [coasted, landed[1] - landed[0], landed[0] - landed[2]],
+		coasted > 0.5 and landed[1] - landed[0] > t.ski_trick_boost * 0.7 and landed[2] < landed[0] * 0.8, "coast %.2f, plain %.1f, full spin %.1f, half spin %.1f" % [coasted, landed[0], landed[1], landed[2]])
 
 	# S7. Landings: a big drop onto a downslope pays out ski_land_boost; onto the flat it costs (ski_flat_land)
 	await _ski(Vector3(flat_x, flat_y + 0.8, 4), Vector3(0, 0, 14))
@@ -3231,25 +3626,6 @@ func _ski_tests() -> void:
 	var on_slope := _speed()
 	check("dropping 8 m at 14 m/s: onto the flat you keep %.1f m/s, onto a 25° downslope %.1f" % [on_flat, on_slope],
 		on_flat < 14.0 * t.ski_flat_land + 1.0 and on_slope > 14.0 + t.ski_land_boost * 0.5 and p.surfing, "flat %.1f, slope %.1f" % [on_flat, on_slope])
-
-	# S8. Gates: through one adds ski_gate_boost; past one, outside its flags, costs ski_gate_miss
-	var gate := SkiGate.make(level, Vector3(flat_x - 2.5, flat_y, 30), Vector3(flat_x + 2.5, flat_y, 30))
-	var jumps := []
-	for dx in [0.0, 4.0]:
-		await _ski(Vector3(flat_x + dx, flat_y + 0.8, 20), Vector3(0, 0, 15))
-		var prev := _speed()
-		var at_gate := 0.0
-		for i in 60:
-			await physics_frame
-			if p.global_position.z > 30.0 and at_gate == 0.0:
-				at_gate = _speed() / prev
-			prev = _speed()
-		jumps.append(at_gate)
-	var through: float = (jumps[0] - 1.0) * 15.0
-	var missed: float = jumps[1]
-	check("a gate adds %.1f m/s; skiing past outside its flags keeps %.0f%% of your speed" % [through, missed * 100.0],
-		through > t.ski_gate_boost * 0.8 and missed < t.ski_gate_miss + 0.05, "through +%.2f, missed x%.2f" % [through, missed])
-	gate.queue_free()
 
 	# S9. Trees: clip one and you stumble (speed down to ski_stumble, no steering a moment) but stay on your skis
 	level.ski.tree(Vector3(flat_x + 0.6, flat_y, 60))

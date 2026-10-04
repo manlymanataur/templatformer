@@ -5,15 +5,17 @@ extends Resource
 @export var top_speed := 12.0 ## running speed you reach by holding a direction
 @export var boost_speed := 32.0 ## hard cap; slopes and boost pads can take you past top_speed up to this
 @export var overspeed_decay := 6.0 ## on flat ground, speed above top_speed bleeds off this fast (m/s per s); downhill you still build speed
-@export var accel := 22.0
-@export var friction := 18.0 ## slow-down with no input
-@export var brake := 45.0 ## slow-down when pushing against your motion
-@export var turn_rate := 12.0 ## how fast you turn at low speed
+@export var accel := 36.0 ## (jovi, 2026-10-04: walking felt slidey; was 22)
+@export var friction := 45.0 ## slow-down with no input (was 18)
+@export var brake := 70.0 ## slow-down when pushing against your motion (was 45)
+@export var turn_rate := 18.0 ## how fast you turn at low speed (was 12)
 @export var turn_rate_fast := 3.0 ## how fast you turn at boost speed
-@export var air_accel := 14.0
+@export var ice_grip := 0.15 ## on ice (group ice) walking keeps this share of your accel, friction, braking and turning
+@export var air_accel := 30.0 ## (jovi, 2026-10-04: mid-air turns had too much momentum; was 14)
+@export var air_turn := 6.0 ## in the air the stick also swings your drift round toward it this fast (per second)
 @export var gravity := 30.0
 @export var jump_speed := 12.0 ## apex = jump_speed^2 / (2 * gravity)
-@export var jump_cut := 5.0 ## upward speed kept when you let go of jump early
+@export var jump_cut := 1.5 ## upward speed kept when you let go of jump early (was 5: jovi wanted a much harder cut)
 @export var coyote_time := 0.1
 @export var jump_buffer := 0.12
 @export var slope_factor := 1.0 ## 1 = slopes speed you up and slow you down like real gravity
@@ -25,7 +27,9 @@ extends Resource
 @export var wall_jump_speed := 8.0 ## away from the wall
 @export var wall_jump_up := 12.0
 @export var wall_jump_side := 6.0 ## stick held along the wall as you kick off angles the jump that way
-@export var wall_coyote := 0.1 ## a wall jump still works this long after you leave the wall
+@export var wall_coyote := 0.2 ## a wall jump still works this long after you leave the wall (was 0.1)
+@export var wall_jump_aim := 9.0 ## kicking off a tree or trunk bends the jump toward another one this close ahead
+@export var wall_jump_aim_cone := 30.0 ## ...within this many degrees of where you kicked
 @export var roll_speed := 13.0
 @export var roll_time := 0.4
 @export var roll_invuln := 0.3 ## dodge window at the start of a roll
@@ -61,14 +65,15 @@ extends Resource
 @export var ski_tuck_turn := 0.45 ## ...but you steer this much as well
 @export var ski_brake := 20.0 ## stick back: skid to a stop (m/s per s)
 @export var ski_pop := 1.35 ## a jump right at a lip goes this much higher than a plain one
-@export var ski_spin_rate := 9.0 ## stick held in the air spins you (radians per second)
+@export var ski_spin_rate := 9.0 ## stick held in the air spins you up to this (radians per second)
+@export var ski_spin_accel := 40.0 ## how fast a held stick winds the spin up (radians per second per second)
+@export var ski_spin_drag := 20.0 ## let go and the spin carries on, slowing by this (radians per second per second)
+@export var speed_lines_from := 0.35 ## speed lines start at this share of the way from top_speed to boost_speed
 @export var ski_trick_boost := 3.0 ## landing each clean full spin adds this much speed
 @export var ski_flat_land := 0.7 ## landing hard on the flat keeps this share of your speed
 @export var ski_land_boost := 2.5 ## landing a big drop onto a downslope adds this much
 @export var ski_stumble := 0.55 ## clipping a tree or a log keeps this share of your speed...
 @export var ski_stumble_time := 0.4 ## ...and you can't steer for this long
-@export var ski_gate_boost := 1.5 ## each gate you pass through adds this much speed
-@export var ski_gate_miss := 0.75 ## missing a gate keeps this share of your speed
 @export var ski_bridge_speed := 10.0 ## a snow bridge holds only while you cross it faster than this
 @export var ski_fov := 22.0 ## at boost_speed the view widens this many degrees...
 @export var ski_cam_rise := 1.6 ## ...and the camera rises this many metres and pulls back a third
@@ -188,10 +193,10 @@ extends Resource
 @export var sling_damage := 1.0 ## what the slung monster does to everything it swings through, and takes itself
 @export var yank_speed := 18.0 ## lash again with a monster leashed: it's yanked to your feet this fast, bowling what's in the way
 
-const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", "accel", "friction", "brake", "turn_rate", "turn_rate_fast",
-	"air_accel", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
+const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", "accel", "friction", "brake", "turn_rate", "turn_rate_fast", "ice_grip",
+	"air_accel", "air_turn", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
-	"wall_jump_up", "wall_jump_side", "wall_coyote", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "hammer_hold", "spin_charge_time", "spin_over_time", "charge_speed", "run_attack_speed", "fast_blade_speed", "perfect_guard", "parry_time", "guard_speed", "guard_push", "guard_push_heavy", "guard_wall", "guard_break", "brace_time", "impale_speed", "impale_damage", "impale_stun", "stuck_time", "surf_friction", "surf_turn", "surf_min", "focus_near", "focus_far", "focus_rate", "bomb_throw_speed",
+	"wall_jump_up", "wall_jump_side", "wall_coyote", "wall_jump_aim", "wall_jump_aim_cone", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "hammer_hold", "spin_charge_time", "spin_over_time", "charge_speed", "run_attack_speed", "fast_blade_speed", "perfect_guard", "parry_time", "guard_speed", "guard_push", "guard_push_heavy", "guard_wall", "guard_break", "brace_time", "impale_speed", "impale_damage", "impale_stun", "stuck_time", "surf_friction", "surf_turn", "surf_min", "focus_near", "focus_far", "focus_rate", "bomb_throw_speed",
 	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "crank_ratio", "screw_notch", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "hitstop_kill", "hitstop_spike", "squash", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_lag", "cam_recenter_delay",
 	"seed_throw_speed", "seed_throw_up", "bomb_throw_keep", "bomb_friction", "bomb_bat_speed", "bomb_bat_up", "bomb_jump_speed", "pincer_window", "pincer_bonus", "knight_magnet_range",
 	"knight_pull_speed", "knight_open_time", "knight_push_knock", "knight_magnet_cd", "iron_plough_knock", "fire_spread_delay", "fire_damage_every",
@@ -199,5 +204,5 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", 
 	"spider_bite_lunge", "spider_turn", "spider_turn_daze", "lash_leash", "sling_time", "sling_radius", "sling_spin", "sling_speed", "sling_damage", "yank_speed",
 	"pot_throw_speed", "pot_throw_run", "pot_throw_up", "pot_respawn", "honey_slow", "honey_jump", "honey_cover", "candy_heat_time", "heat_reach", "candle_heat", "swap_range", "drunk_time", "drunk_sway", "drunk_monster_time", "wet_time", "wine_burn", "lure_range", "crate_push_speed", "crate_burn",
 	"step_height", "launch_up", "ski_grip_slow", "ski_grip_fast", "ski_turn_drag", "ski_carve_time", "ski_carve_boost", "ski_tuck_gain", "ski_tuck_turn", "ski_brake",
-	"ski_pop", "ski_spin_rate", "ski_trick_boost", "ski_flat_land", "ski_land_boost", "ski_stumble", "ski_stumble_time", "ski_gate_boost", "ski_gate_miss", "ski_bridge_speed",
+	"ski_pop", "ski_spin_rate", "ski_spin_accel", "ski_spin_drag", "speed_lines_from", "ski_trick_boost", "ski_flat_land", "ski_land_boost", "ski_stumble", "ski_stumble_time", "ski_bridge_speed",
 	"ski_fov", "ski_cam_rise"]

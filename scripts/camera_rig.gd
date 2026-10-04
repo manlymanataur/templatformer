@@ -4,7 +4,8 @@ extends Node3D
 ## your motion. While locked on, it frames you and the target like Ocarina's Z-targeting.
 ## Speed shows (jovi, 2026-10-04): past top_speed the view widens (ski_fov), the camera rises (ski_cam_rise) and
 ## pulls back, speed lines stream past and the view trembles, all on one dial (speed_k). Skiing, it follows
-## behind your line at once and rolls a little with your lean.
+## behind your line at once and rolls a little with your lean. Speed lines start at speed_lines_from and thin out
+## toward it (jovi, 2026-10-04: fewer at lower speeds).
 
 var player: Player
 var t: Tuning
@@ -31,7 +32,7 @@ func _ready() -> void:
 	arm.add_child(cam)
 	lines = CPUParticles3D.new() # speed lines: thin streaks rushing past the lens
 	lines.emitting = false
-	lines.amount = 48
+	lines.amount = LINES
 	lines.lifetime = 0.35
 	lines.local_coords = true
 	lines.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
@@ -55,6 +56,15 @@ func _ready() -> void:
 	lines.position = Vector3(0, 0, -6)
 	cam.add_child(lines)
 	global_position = player.global_position
+
+## How many speed lines stream at this speed_k: none below from, then from a handful up to LINES at 1, in steps
+## of 8 (changing the count restarts the stream, so it changes rarely).
+const LINES := 48
+static func line_count(k: float, from: float) -> int:
+	if k < from:
+		return 0
+	var f := clampf((k - from) / maxf(1.0 - from, 0.01), 0.0, 1.0)
+	return clampi(8 * roundi(lerpf(1.0, LINES / 8.0, f * f)), 8, LINES)
 
 func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventMouseButton and e.pressed:
@@ -100,7 +110,10 @@ func _physics_process(dt: float) -> void:
 	arm.spring_length = t.cam_distance * zoom * (1.0 + speed_k / 3.0)
 	cam.fov = 70.0 + t.ski_fov * speed_k
 	cam.rotation.z = lerpf(cam.rotation.z, -player.ski_lean * 0.06 if player.surfing else 0.0, clampf(6.0 * dt, 0.0, 1.0))
-	lines.emitting = speed_k > 0.15
+	var count := line_count(speed_k, t.speed_lines_from)
+	lines.emitting = count > 0
+	if count > 0 and count != lines.amount:
+		lines.amount = count # a few streaks just past speed_lines_from, the full stream at boost speed
 	shake = maxf(shake, 0.03 * maxf(speed_k - 0.5, 0.0))
 	player.cam_basis = Basis(Vector3.UP, yaw)
 	shake = maxf(shake - dt * 0.8, 0.0)

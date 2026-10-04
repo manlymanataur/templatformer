@@ -61,7 +61,7 @@ const WARPS := [
 	["Cellar: raft", "cellar_raft"],
 	["Cellar: fire door", "cellar_fire"],
 	["Ski: top", "ski_start"],
-	["Ski: gates", "ski_gates"],
+	["Ski: lash posts", "ski_lash"],
 	["Ski: trees", "ski_trees"],
 	["Ski: boost pad and tilts", "ski_boost"],
 	["Ski: rock gap", "ski_gap"],
@@ -73,6 +73,14 @@ const WARPS := [
 	["Ski: launch pad", "ski_launch"],
 	["Ski: fork", "ski_fork"],
 	["Ski: finish and post", "ski_finish"],
+	["Mountain: base (triple jump)", "mountain_base"],
+	["Mountain: trees", "mountain_trees"],
+	["Mountain: chimney", "mountain_chimney"],
+	["Mountain: vines", "mountain_vines"],
+	["Mountain: gaps", "mountain_gaps"],
+	["Mountain: launch pad", "mountain_launch"],
+	["Mountain: uphill rail", "mountain_rail"],
+	["Mountain: summit", "mountain_summit"],
 ]
 const SHOWN := 12 ## rows the menu shows at once
 const ACTIONS := ["Give every item", "God mode", "Heal", "Shrink / grow"]
