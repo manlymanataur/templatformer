@@ -51,6 +51,27 @@ extends Resource
 @export var surf_friction := 0.8 ## shield surf: slow-down on the flat (m/s per s)
 @export var surf_turn := 1.8 ## shield surf: steering (radians per second)
 @export var surf_min := 1.5 ## shield surf ends below this speed on the flat
+## Skiing (the shield surf, jovi 2026-10-04): the stick's side steers, forward tucks, back brakes.
+@export var ski_grip_slow := 2.6 ## steering (radians per second) at a crawl...
+@export var ski_grip_fast := 1.0 ## ...and at boost_speed: fast, turns are wide and weighty
+@export var ski_turn_drag := 0.12 ## a turn costs this share of your speed per radian turned
+@export var ski_carve_time := 0.8 ## holding a turn the same way this long fills the carve meter
+@export var ski_carve_boost := 5.0 ## letting go of a full carve (or switching sides) adds this much speed
+@export var ski_tuck_gain := 1.35 ## tucked (stick forward): slopes pull you this much harder...
+@export var ski_tuck_turn := 0.45 ## ...but you steer this much as well
+@export var ski_brake := 20.0 ## stick back: skid to a stop (m/s per s)
+@export var ski_pop := 1.35 ## a jump right at a lip goes this much higher than a plain one
+@export var ski_spin_rate := 9.0 ## stick held in the air spins you (radians per second)
+@export var ski_trick_boost := 3.0 ## landing each clean full spin adds this much speed
+@export var ski_flat_land := 0.7 ## landing hard on the flat keeps this share of your speed
+@export var ski_land_boost := 2.5 ## landing a big drop onto a downslope adds this much
+@export var ski_stumble := 0.55 ## clipping a tree or a log keeps this share of your speed...
+@export var ski_stumble_time := 0.4 ## ...and you can't steer for this long
+@export var ski_gate_boost := 1.5 ## each gate you pass through adds this much speed
+@export var ski_gate_miss := 0.75 ## missing a gate keeps this share of your speed
+@export var ski_bridge_speed := 10.0 ## a snow bridge holds only while you cross it faster than this
+@export var ski_fov := 22.0 ## at boost_speed the view widens this many degrees...
+@export var ski_cam_rise := 1.6 ## ...and the camera rises this many metres and pulls back a third
 @export var focus_near := 6.0 ## locked on this far from a monster (or further) builds focus (just outside the doubled poleaxe's reach)
 @export var focus_far := 11.0 ## ...up to this far
 @export var focus_rate := 0.45 ## focus per second (full at 1)
@@ -177,4 +198,6 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", 
 	"rope_skip_height", "rope_skip_width", "spider_bite_reach", "spider_bite_every", "spider_bite_damage", "spider_pilot_bite", "spider_pilot_bite_time",
 	"spider_bite_lunge", "spider_turn", "spider_turn_daze", "lash_leash", "sling_time", "sling_radius", "sling_spin", "sling_speed", "sling_damage", "yank_speed",
 	"pot_throw_speed", "pot_throw_run", "pot_throw_up", "pot_respawn", "honey_slow", "honey_jump", "honey_cover", "candy_heat_time", "heat_reach", "candle_heat", "swap_range", "drunk_time", "drunk_sway", "drunk_monster_time", "wet_time", "wine_burn", "lure_range", "crate_push_speed", "crate_burn",
-	"step_height", "launch_up"]
+	"step_height", "launch_up", "ski_grip_slow", "ski_grip_fast", "ski_turn_drag", "ski_carve_time", "ski_carve_boost", "ski_tuck_gain", "ski_tuck_turn", "ski_brake",
+	"ski_pop", "ski_spin_rate", "ski_trick_boost", "ski_flat_land", "ski_land_boost", "ski_stumble", "ski_stumble_time", "ski_gate_boost", "ski_gate_miss", "ski_bridge_speed",
+	"ski_fov", "ski_cam_rise"]
