@@ -9,6 +9,7 @@ var use_defaults := false ## tests set this so saved tuning doesn't change resul
 var marks := {} ## named positions the tests start from
 var checker: ImageTexture
 var dev: Node ## the playtest tools (dev_menu.gd): warps, pins, god mode
+var ski: SkiRun ## the ski run (its stations and pieces)
 
 
 func _ready() -> void:
@@ -268,6 +269,7 @@ func _build() -> void:
 	Works.build(self)
 	PowersYard.build(self)
 	Cellar.build(self)
+	ski = SkiRun.build(self)
 	add_child(Power.new())
 	add_child(Machinery.new())
 	marks["targets"] = Vector3(-2, 0.6, 5)

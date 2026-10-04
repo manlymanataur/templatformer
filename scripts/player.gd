@@ -75,7 +75,24 @@ var guard_t := -1.0 ## seconds since the shield went up, -1 while it's down
 var still_t := 0.0 ## seconds guarding without moving: brace_time of it braces
 var parry_t := 0.0 ## after a perfect guard: the next sweet-spot hit is stronger
 var guard_break_t := 0.0 ## a heavy hit broke your guard: you're reeling
-var surfing := false ## riding your shield down the ground
+var surfing := false ## riding your shield down the ground (skiing: see _surf_step)
+var ski_tuck := false ## surfing with the stick forward: faster, steers less, ducks under duck bars
+var ski_braking := false ## surfing with the stick back: skidding to a stop
+var ski_carve := 0.0 ## 0-1: a turn held the same way fills it; letting go pays it out as speed
+var ski_lean := 0.0 ## -1..1, how hard you're leaning into the turn (the body and camera roll with it)
+var ski_spin := 0.0 ## radians spun in the air this jump
+var ski_post: Node3D = null ## surfing, the lash hooked a post: you swing round it
+var _carve_side := 0.0
+var _stumble_t := 0.0
+var _ski_air_t := 0.0
+var _fall_vel := Vector3.ZERO ## velocity before the last move in the air (landings read it)
+var _land_sq := 0.0 ## landing squash, springing back
+var _land_sq_v := 0.0
+var _ski_post_r := 0.0
+var _ski_post_a := 0.0
+var _ski_hit_t := 0.0
+var _spray: CPUParticles3D
+var _rope: MeshInstance3D
 var focus_meter := 0.0 ## 0-1, builds while locked on at the poleaxe's measure
 var flash_t := 0.0 ## the flash step's dash
 var _guard_held := false
@@ -143,7 +160,7 @@ func _ready() -> void:
 	floor_stop_on_slope = false
 	floor_block_on_wall = false
 	max_slides = 6
-	collision_mask = 1 | 1 << 1 | 1 << 2 | 1 << 4 # the world, bars and railings, grates (until you shrink), props (seed cubes, the spider)
+	collision_mask = 1 | 1 << 1 | 1 << 2 | 1 << 4 | 1 << 6 # the world, bars and railings, grates (until you shrink), props (seed cubes, the spider), duck bars
 	_col = CollisionShape3D.new()
 	var sphere := SphereShape3D.new()
 	sphere.radius = RADIUS
@@ -176,6 +193,39 @@ func _ready() -> void:
 	sm.metallic = 0.5
 	_shield.material_override = sm
 	visual.add_child(_shield)
+	# skiing: snow spray off your edge, and the rope when you swing round a post
+	_spray = CPUParticles3D.new()
+	_spray.emitting = false
+	_spray.amount = 24
+	_spray.lifetime = 0.45
+	_spray.local_coords = false
+	_spray.direction = Vector3.UP
+	_spray.spread = 60.0
+	_spray.initial_velocity_min = 2.0
+	_spray.initial_velocity_max = 5.0
+	_spray.gravity = Vector3.DOWN * 9.0
+	_spray.scale_amount_min = 0.5
+	_spray.scale_amount_max = 1.2
+	var spm := SphereMesh.new()
+	spm.radius = 0.07
+	spm.height = 0.14
+	var spmat := StandardMaterial3D.new()
+	spmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	spmat.albedo_color = Color(0.95, 0.97, 1.0)
+	spm.material = spmat
+	_spray.mesh = spm
+	_spray.position = Vector3(0, -0.4, 0)
+	add_child(_spray)
+	_rope = MeshInstance3D.new()
+	var rcm := CylinderMesh.new()
+	rcm.top_radius = 0.03
+	rcm.bottom_radius = 0.03
+	rcm.radial_segments = 4
+	_rope.mesh = rcm
+	_rope.material_override = _mat(Color(0.85, 0.7, 0.4))
+	_rope.visible = false
+	_rope.top_level = true
+	add_child(_rope)
 	add_to_group("light_sources")
 	_hat = Node3D.new()
 	_hat.position = Vector3(0, 0.45, 0)
@@ -287,7 +337,7 @@ func set_small(on: bool, force := false) -> bool:
 		held_pot = null
 	(_col.shape as SphereShape3D).radius = r_new
 	global_position = at
-	collision_mask = (1 if small else 1 | 1 << 1 | 1 << 2) | 1 << 4 # small, grates, fences and bars don't stop you; props (seed cubes, the spider) always do
+	collision_mask = (1 if small else 1 | 1 << 1 | 1 << 2) | 1 << 4 | 1 << 6 # small, grates, fences and bars don't stop you; props (seed cubes, the spider) and duck bars always do
 	magnet_flying = false
 	inventory.changed.emit()
 	return true
@@ -364,6 +414,8 @@ func respawn() -> void:
 	invuln = 0.0
 	roll_t = 0.0
 	surfing = false
+	ski_spin = 0.0
+	ski_post = null
 	guard_break_t = 0.0
 	focus_meter = 0.0
 	if carrying != null:
@@ -435,6 +487,9 @@ func stow_spider() -> void:
 ## fetches a loose seed into your hands, stings and yanks a monster, or hooks the spider as a leash.
 ## With the spider already hooked, it lets go. Your hands must be empty.
 func use_lash() -> void:
+	if ski_post != null:
+		ski_post = null # let go of the post you're swinging round
+		return
 	if leash != null:
 		if Sling.yank(self): # a monster on the leash: yank it to your feet (Sling)
 			return
@@ -460,6 +515,8 @@ func use_lash() -> void:
 	elif c is Seed and (c as Seed).loose():
 		held_seed = c
 		held_seed.hold(self)
+	elif c.is_in_group("lash_posts") and surfing and is_on_floor():
+		_ski_hook(c as Node3D) # skiing: swing round it
 	elif c.is_in_group("lash_posts"):
 		var flat := Vector3(dir.x, 0, dir.z).normalized()
 		grapple_to = end - flat * 0.7
@@ -842,6 +899,24 @@ func _physics_process(dt: float) -> void:
 		_surf_pogo()
 	if on_floor and guarding() and not _was_on_floor and flat_speed() > t.surf_min:
 		surfing = true # landed holding the shield: ride it
+	if on_floor and not _was_on_floor and surfing:
+		_ski_land()
+	if on_floor and guarding() and not surfing and _floor_in("snow") and _ski_can_start():
+		surfing = true # on snow the shield goes underfoot as soon as you'd slide
+	if surfing and not on_floor:
+		_ski_air_step(dt, wish)
+	else:
+		_ski_air_t = 0.0
+	if not surfing:
+		ski_tuck = false
+		ski_braking = false
+		ski_carve = 0.0
+		ski_post = null
+	ski_lean = move_toward(ski_lean, 0.0, 3.0 * dt) if not (surfing and on_floor) else ski_lean
+	if not (surfing and on_floor) and _spray != null:
+		_spray.emitting = false
+	# tucked, you duck under duck bars (layer 7)
+	collision_mask = collision_mask & ~(1 << 6) if surfing and ski_tuck else collision_mask | 1 << 6
 	if flash_t > 0.0:
 		flash_t -= dt # the flash step's dash carries you
 	elif homing != null:
@@ -867,7 +942,7 @@ func _physics_process(dt: float) -> void:
 	elif on_floor:
 		_ground_step(dt, wish)
 	else:
-		_air_step(dt, wish, jump_held)
+		_air_step(dt, Vector3.ZERO if surfing else wish, jump_held) # off your skis the stick spins you instead
 	if small and not magnet_flying:
 		_blow(dt, on_floor)
 
@@ -878,8 +953,13 @@ func _physics_process(dt: float) -> void:
 	if on_floor and flash_t <= 0.0 and homing == null and pound_t < 0.0 and rail == null and grapple_t <= 0.0 \
 			and hang == Vector3.ZERO and climbing == null and not magnet_flying and velocity.dot(up_direction) < 1.0:
 		StepUp.try(self, dt, t.step_height * (t.small_scale if small else 1.0), radius()) # walk over bumps
+	if not on_floor:
+		_fall_vel = velocity
+	var pre_slide := velocity
 	move_and_slide()
 	_touch_after_move()
+	if surfing:
+		_ski_after_move(pre_slide, dt)
 	if _teleported > 0:
 		_teleported -= 1
 		if _teleported == 0:
@@ -1156,7 +1236,7 @@ func _update_visual(dt: float) -> void:
 		return
 	visual.global_basis = Basis.looking_at(fwd.normalized(), up).scaled(Vector3.ONE * (t.small_scale if small else 1.0))
 	_shield.visible = inventory.has("poleaxe")
-	if surfing and is_on_floor():
+	if surfing:
 		_shield.position = Vector3(0, -0.5, 0) # underfoot
 		_shield.rotation = Vector3(-PI / 2.0, 0, 0)
 	elif guarding():
@@ -1168,6 +1248,7 @@ func _update_visual(dt: float) -> void:
 	if roll_t > 0.0 and roll_kind != "sidehop":
 		var spin := (1.0 - roll_t / t.roll_time) * TAU * (1.0 if roll_kind == "roll" else -1.0)
 		visual.rotate_object_local(Vector3.RIGHT, -spin)
+	_ski_visual(dt)
 
 ## After moving: a normal-size roll bursts cracked walls; your weight cracks cracked floors.
 func _touch_after_move() -> void:
@@ -1403,23 +1484,66 @@ func _hang_step(wish: Vector3, jump_pressed: bool) -> void:
 		velocity = hang_n * 2.0
 		hang = Vector3.ZERO
 
-## Shield surf: on your shield there's almost no friction, slopes speed you up as they would a roll, and the
-## stick only steers (surf_turn). Jump hops with your speed, walls bounce you, and whatever you run into takes
-## a bump. Let go of guard, or slow to surf_min on the flat, and you step off.
+## Shield surf, which is skiing (jovi, 2026-10-04): on your shield there's almost no friction and slopes speed
+## you up as they would a roll. The stick's side steers (edge grip: tighter slow, wider fast, and each radian
+## turned costs ski_turn_drag of your speed). A turn held the same way fills the carve meter, paid out as speed
+## when you let go or switch sides. Stick forward tucks (slopes pull harder, you steer less, you duck under duck
+## bars); stick back brakes. Ice takes steering and braking away, wind pushes you, a lash post swings you round
+## it. Jump hops with your speed (higher right at a lip), walls bounce you, trees and logs trip you
+## (_ski_after_move), and whatever you run into takes a bump. Let go of guard, or slow to surf_min on the flat,
+## and you step off.
 func _surf_step(dt: float, wish: Vector3) -> void:
 	coyote = t.coyote_time
 	var n := get_floor_normal()
 	if n == Vector3.ZERO:
 		n = Vector3.UP
+	var travel := Vector3(velocity.x, 0, velocity.z)
+	if travel.length() > 6.0 and n.dot(travel) > up_direction.dot(travel) + 0.5 and (n.y < 0.6 or _at_lip(travel.normalized(), 0.0, up_direction)):
+		# a lip (a cliff edge, a gap, the top of a kicker): fly off it rather than wrap round it
+		up_direction = Vector3.UP
+		air_lock = 0.1
+		return
 	var v := velocity - n * velocity.dot(n)
+	var ice := _floor_in("ice")
+	var dir := v.normalized() if v.length() > 0.5 else _flat_facing()
+	var along := wish.dot(dir)
+	var side := wish.dot(n.cross(dir).normalized()) # + is left
+	ski_tuck = along > 0.5 and absf(side) < along
+	ski_braking = along < -0.5 and not ice
 	var g := Vector3.DOWN * t.gravity
 	var down := (g - n * g.dot(n)) * t.slope_factor
-	v += down * dt
-	v = v.move_toward(Vector3.ZERO, t.surf_friction * dt)
-	var w := wish - n * wish.dot(n)
-	if w.length() > 0.2 and v.length() > 0.5:
-		var ang := v.signed_angle_to(w, n)
-		v = v.rotated(n, clampf(ang, -t.surf_turn * dt, t.surf_turn * dt))
+	v += down * dt * (t.ski_tuck_gain if ski_tuck else 1.0)
+	if not ice:
+		v = v.move_toward(Vector3.ZERO, t.surf_friction * (0.5 if ski_tuck else 1.0) * dt)
+	if ski_braking:
+		v = v.move_toward(Vector3.ZERO, t.ski_brake * dt)
+	for w in get_tree().get_nodes_in_group("ski_wind"):
+		if (w as Area3D).overlaps_body(self):
+			var push: Vector3 = w.push
+			v += (push - n * push.dot(n)) * dt
+	# steering: edge grip loosens with speed, and turning costs speed
+	_stumble_t -= dt
+	var turn := 0.0
+	var steer := not ice and _stumble_t <= 0.0 and ski_post == null
+	if steer and absf(side) > 0.15 and v.length() > 0.5:
+		var k := clampf(v.length() / t.boost_speed, 0.0, 1.0)
+		var grip := lerpf(t.ski_grip_slow, t.ski_grip_fast, k) * (t.ski_tuck_turn if ski_tuck else 1.0)
+		turn = clampf(side, -1.0, 1.0) * grip * dt
+		v = v.rotated(n, turn) * (1.0 - t.ski_turn_drag * absf(turn))
+	ski_lean = lerpf(ski_lean, clampf(turn / dt / t.ski_grip_slow, -1.0, 1.0), clampf(10.0 * dt, 0.0, 1.0))
+	# carving: hold a turn one way to fill the meter; let go or switch sides to cash it in
+	var s := signf(side) if absf(side) > 0.5 and steer else 0.0
+	if s != 0.0 and (s == _carve_side or ski_carve <= 0.0):
+		_carve_side = s
+		ski_carve = minf(ski_carve + dt / t.ski_carve_time, 1.0)
+	else:
+		if ski_carve >= 0.3 and v.length() > 0.5:
+			v += v.normalized() * t.ski_carve_boost * ski_carve
+			_spray_burst(12)
+		ski_carve = 0.0
+		_carve_side = s
+	if ski_post != null:
+		v = _ski_swing(v, n)
 	if is_on_wall():
 		var wn := get_wall_normal()
 		wn.y = 0.0
@@ -1433,6 +1557,7 @@ func _surf_step(dt: float, wish: Vector3) -> void:
 	facing = v.normalized() if v.length() > 0.5 else facing
 	if down.length() < 1.0 and v.length() < t.surf_min:
 		surfing = false
+	_spray.emitting = v.length() > 5.0 and (absf(side) > 0.4 and steer or ski_braking)
 	# bump whatever you surf into
 	var now := Time.get_ticks_msec()
 	for m in get_tree().get_nodes_in_group("monsters"):
@@ -1443,7 +1568,165 @@ func _surf_step(dt: float, wish: Vector3) -> void:
 			mn.strike(1 + (1 if v.length() > t.fast_blade_speed else 0), global_position, {"head": "shield", "knock": v.length() * 0.8, "above": true})
 			Hitfx.hit(get_tree(), mn.global_position, t, 1.0, mn)
 	if buffer > 0.0:
+		var pop := _at_lip(dir, v.length(), n)
+		ski_post = null
 		_ground_jump(n)
+		if pop:
+			velocity += n * t.jump_speed * (t.ski_pop - 1.0) # popped right at the lip
+			_spray_burst(10)
+
+## The ground just ahead drops away (the top of a kicker, the edge of a gap or a cliff).
+func _at_lip(dir: Vector3, speed: float, n: Vector3) -> bool:
+	var feet := global_position - n * radius()
+	var ahead := feet + dir * (1.2 + speed * 0.08)
+	var q := PhysicsRayQueryParameters3D.create(ahead + n * 0.5, ahead - n * 1.5, 1, [get_rid()])
+	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+## Is the floor under you in this group (snow, ice)?
+func _floor_in(group: String) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(global_position, global_position - up_direction * (radius() + 0.3), 1, [get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	return not hit.is_empty() and (hit["collider"] as Node).is_in_group(group)
+
+## Guard on snow puts you on your shield once you'd slide: on a slope, or already moving.
+func _ski_can_start() -> bool:
+	var n := get_floor_normal()
+	return n.y < 0.98 or flat_speed() > t.surf_min
+
+## In the air off your skis: the stick spins you (a trick if you land square, a stumble if you don't).
+func _ski_air_step(dt: float, wish: Vector3) -> void:
+	_ski_air_t += dt
+	if rail != null or hang != Vector3.ZERO or climbing != null:
+		ski_spin = 0.0
+		return
+	var f := _flat_facing()
+	var side := wish.dot(Vector3.UP.cross(f))
+	if absf(side) > 0.5:
+		ski_spin += signf(side) * t.ski_spin_rate * dt
+
+## Touching down on your shield: spins pay out or trip you; a big drop onto a downslope pays out, onto the flat
+## it costs you (Sonic); either way you squash.
+func _ski_land() -> void:
+	if _ski_air_t < 0.15:
+		ski_spin = 0.0 # only a bump: not a landing
+		return
+	var n := get_floor_normal()
+	if n == Vector3.ZERO:
+		n = Vector3.UP
+	var vn := -_fall_vel.dot(n)
+	var h := _fall_vel - n * _fall_vel.dot(n)
+	var spins := roundi(absf(ski_spin) / TAU)
+	var off := absf(absf(ski_spin) - spins * TAU)
+	if absf(ski_spin) > 1.0:
+		if spins >= 1 and off < 0.7:
+			h += h.normalized() * t.ski_trick_boost * spins # landed it square
+			Hitfx.sparks(get_tree(), global_position, 1.0 + spins * 0.5)
+		else:
+			h *= t.ski_stumble # landed sideways
+			_stumble_t = t.ski_stumble_time
+	ski_spin = 0.0
+	if vn > 10.0 and _ski_air_t > 0.5 and h.length() > 0.5:
+		if n.y < 0.97 and h.y < -0.05 * h.length():
+			h += h.normalized() * t.ski_land_boost # a drop onto a downslope: the compression pays out
+		elif n.y >= 0.97:
+			h *= t.ski_flat_land # a drop onto the flat: it costs you
+	_land_sq = clampf(vn * 0.025, 0.0, 0.45)
+	_land_sq_v = 0.0
+	_ski_air_t = 0.0
+	velocity = h
+	_spray_burst(int(clampf(vn, 4.0, 20.0)))
+
+## After a move on your shield: clipping a tree, a log or a duck bar trips you (speed lost, no steering for a
+## moment) rather than bouncing you.
+func _ski_after_move(pre: Vector3, dt: float) -> void:
+	_ski_hit_t -= dt
+	if _ski_hit_t > 0.0:
+		return
+	for i in get_slide_collision_count():
+		var c := get_slide_collision(i)
+		var o := c.get_collider() as Node
+		if o == null or not (o.is_in_group("ski_stumble") or o.is_in_group("trunks")):
+			continue
+		var nn := c.get_normal()
+		if absf(nn.y) > 0.7 or pre.dot(nn) > -2.0:
+			continue
+		var keep := pre - nn * pre.dot(nn)
+		velocity = keep * t.ski_stumble
+		_stumble_t = t.ski_stumble_time
+		ski_carve = 0.0
+		_ski_hit_t = 0.3
+		Hitfx.shake(get_tree(), 0.12)
+		Hitfx.sparks(get_tree(), c.get_position(), 0.8)
+		return
+
+## Lash a post while skiing: the rope holds you at its length and you swing round, keeping your speed.
+func _ski_hook(post: Node3D) -> void:
+	ski_post = post
+	var r := global_position - post.global_position
+	r.y = 0.0
+	_ski_post_r = r.length()
+	_ski_post_a = 0.0
+
+func _ski_swing(v: Vector3, n: Vector3) -> Vector3:
+	if not is_instance_valid(ski_post):
+		ski_post = null
+		return v
+	var r := global_position - ski_post.global_position
+	r.y = 0.0
+	var sp := v.length()
+	if r.length() >= _ski_post_r - 0.05 and sp > 0.1:
+		var rn := r.normalized()
+		var out := v.dot(rn)
+		if out > 0.0:
+			var before := v
+			v -= rn * out
+			v = (v - n * v.dot(n)).normalized() * sp # the rope turns you but keeps your speed
+			_ski_post_a += before.angle_to(v)
+	if _ski_post_a > PI * 0.95:
+		ski_post = null # round the hairpin: it lets go
+	return v
+
+## A gate passed (boost) or missed (penalty). See SkiGate.
+func ski_gate(passed: bool) -> void:
+	var h := velocity
+	if passed:
+		velocity += (h.normalized() if h.length() > 0.1 else _flat_facing()) * t.ski_gate_boost
+	else:
+		velocity *= t.ski_gate_miss
+		Hitfx.shake(get_tree(), 0.06)
+
+func _spray_burst(amount: int) -> void:
+	if _spray == null:
+		return
+	var b := _spray.duplicate() as CPUParticles3D
+	b.one_shot = true
+	b.amount = maxi(amount, 2)
+	b.explosiveness = 0.9
+	get_parent().add_child(b)
+	b.global_position = global_position - Vector3.UP * radius() * 0.8
+	b.emitting = true
+	get_tree().create_timer(1.0, true, false, true).timeout.connect(b.queue_free)
+
+## Skiing's look: lean into turns, crouch when tucked, spin in the air, squash on landing, the rope to a post.
+func _ski_visual(dt: float) -> void:
+	_land_sq_v += (-_land_sq * 260.0 - _land_sq_v * 14.0) * dt
+	_land_sq += _land_sq_v * dt
+	if surfing:
+		visual.rotate_object_local(Vector3.FORWARD, -ski_lean * 0.45)
+		if not is_on_floor() and absf(ski_spin) > 0.01:
+			visual.rotate_object_local(Vector3.UP, ski_spin)
+	var crouch := 0.72 if surfing and ski_tuck else 1.0
+	var sq := 1.0 - _land_sq
+	visual.scale = visual.scale * Vector3(1.0 / sqrt(sq), crouch * sq, 1.0 / sqrt(sq))
+	if _rope != null:
+		_rope.visible = ski_post != null and is_instance_valid(ski_post)
+		if _rope.visible:
+			var a := global_position
+			var b := ski_post.global_position
+			b.y = a.y
+			var mid := (a + b) / 2.0
+			(_rope.mesh as CylinderMesh).height = a.distance_to(b)
+			_rope.global_transform = Transform3D(Basis.looking_at((b - a).normalized(), Vector3.UP) * Basis(Vector3.RIGHT, PI / 2.0), mid)
 
 ## Coming down on something with your shield under you: it's a pogo, even on a spiked monster's head.
 func _surf_pogo() -> void:

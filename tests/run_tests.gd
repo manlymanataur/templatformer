@@ -341,6 +341,7 @@ func _combat_tests() -> void:
 	await _feel_fix_tests()
 	await _poleaxe_tests()
 	await _impact_tests()
+	await _ski_tests()
 	await _works_tests(arena)
 	await _powers_tests()
 	await _cellar_tests()
@@ -3082,6 +3083,357 @@ func _impact_tests() -> void:
 		absf(angled.z + t.wall_jump_side) < 0.01 and absf(angled.x - t.wall_jump_speed) < 0.01 and wn != Vector3.ZERO and off_wall and kicked,
 		"angled %s, wall %s, off %s, after %s" % [angled, wn, off_wall, p.velocity])
 	await frames(60)
+
+## A snow slope for the ski tests, out past everything (x 700): its top edge's middle at top, falling deg along +z.
+func _snow_slope(top: Vector3, len_: float, deg: float, w := 14.0, kind := "snow") -> StaticBody3D:
+	var b := Basis(Vector3.RIGHT, deg_to_rad(deg))
+	var n := b * Vector3.UP
+	var dy := len_ * tan(deg_to_rad(deg))
+	var mid := top + Vector3(0, -dy / 2.0, len_ / 2.0)
+	var body: StaticBody3D = level.box(mid - n * 0.5, Vector3(w, 1, sqrt(len_ * len_ + dy * dy)), b, Color(0.93, 0.95, 1.0))
+	body.add_to_group(kind)
+	return body
+
+## Start skiing at pos with this velocity: guard held, on snow.
+func _ski(pos: Vector3, vel: Vector3) -> void:
+	await _fresh_player(pos)
+	p.inventory.add("poleaxe")
+	p.ai_guard = true
+	p.velocity = vel
+	await physics_frame
+	p.velocity = vel
+	await frames(2)
+
+func _speed() -> float:
+	return p.velocity.length()
+
+## Skiing (jovi, 2026-10-04): the shield surf with carving, tuck, brake, pop, spins, landings, gates, trees,
+## ice, duck bars, rails, cliffs, pads, snow bridges, wind, the lash post, and the camera at speed.
+func _ski_tests() -> void:
+	var t: Tuning = level.t
+	var m: Dictionary = level.marks
+	var o := Vector3(700, 60, 0)
+	var steep := _snow_slope(o, 120, 20)
+	var flat := _snow_slope(o + Vector3(40, -20, 0), 160, 0, 30)
+	var drop := _snow_slope(o + Vector3(80, -20, 0), 60, 25, 14)
+	var flat_x := o.x + 40.0
+	var flat_y := o.y - 20.0
+
+	# S1. Tuck: stick forward on a 20° slope pulls you faster than skiing upright
+	var speeds := []
+	for tuck in [false, true]:
+		await _ski(o + Vector3(0, 0.8, 4), Vector3(0, 0, 8))
+		p.ai_move = Vector2(0, 1) if tuck else Vector2.ZERO
+		await frames(90)
+		speeds.append(_speed())
+		p.ai_move = Vector2.ZERO
+	check("on 20° snow, 1.5 s tucked reaches %.1f m/s, upright %.1f" % [speeds[1], speeds[0]], p.surfing and speeds[1] > speeds[0] * 1.08,
+		"upright %.1f, tucked %.1f" % speeds)
+
+	# S2. Brake: stick back on the 20° slope slows you from 20 m/s; on the flat you skid to a stop
+	await _ski(o + Vector3(0, 0.8 - 20.0 * tan(deg_to_rad(20.0)), 20), Vector3(0, 0, 20))
+	p.ai_move = Vector2(0, -1)
+	await frames(60)
+	var slope_braked := _speed()
+	await _ski(Vector3(flat_x, flat_y + 0.8, 10), Vector3(0, 0, 15))
+	p.ai_move = Vector2(0, -1)
+	var stopped_at := -1
+	for i in 120:
+		await physics_frame
+		if _speed() < 1.0:
+			stopped_at = i
+			break
+	p.ai_move = Vector2.ZERO
+	check("braking (stick back): 20 to %.1f m/s in 1 s down 20°; from 15 m/s on the flat a stop in %.2f s" % [slope_braked, stopped_at / 60.0],
+		slope_braked < 12.0 and stopped_at > 0 and stopped_at < 75, "slope %.1f m/s, flat stop frame %d" % [slope_braked, stopped_at])
+
+	# S3. Edge grip: the same stick turns you harder slow than fast
+	var rates := []
+	for sp in [8.0, 24.0]:
+		await _ski(Vector3(flat_x, flat_y + 0.8, 10), Vector3(0, 0, sp))
+		var h0 := Vector2(p.velocity.x, p.velocity.z)
+		p.ai_move = Vector2(1, 0)
+		await frames(15)
+		p.ai_move = Vector2.ZERO
+		rates.append(absf(h0.angle_to(Vector2(p.velocity.x, p.velocity.z))) / 0.25)
+	check("edge grip: full stick turns %.1f rad/s at 8 m/s but %.1f at 24 m/s" % rates, rates[0] > rates[1] * 1.4, str(rates))
+
+	# S4. Carving: hold a turn till the meter fills, let go, and the carve pays out about ski_carve_boost
+	await _ski(Vector3(flat_x - 10, flat_y + 0.8, 10), Vector3(0, 0, 15))
+	for i in int(t.ski_carve_time * 60.0) + 4:
+		var side := Vector3.UP.cross(p.velocity.normalized()) * 0.7 # the stick held to one side, as the camera follows behind
+		p.ai_move = Vector2(side.x, side.z)
+		await physics_frame
+	var full := p.ski_carve
+	var before := _speed()
+	p.ai_move = Vector2.ZERO
+	await frames(2)
+	var gained := _speed() - before
+	check("holding a turn %.1f s fills the carve; letting go adds %.1f m/s" % [t.ski_carve_time, gained], full >= 0.99 and gained > t.ski_carve_boost * 0.8,
+		"meter %.2f, %.1f to %.1f m/s" % [full, before, _speed()])
+
+	# S5. Pop: a jump right at a lip goes ski_pop times higher than one mid-slope
+	await _ski(o + Vector3(0, 0.8 - 30.0 * tan(deg_to_rad(20.0)), 30), Vector3(0, -4, 12))
+	p.ai_jump = true
+	await frames(2)
+	p.ai_jump = false
+	var mid_up := p.velocity.dot(Basis(Vector3.RIGHT, deg_to_rad(20.0)) * Vector3.UP)
+	var lip_z := o.z + 120.0
+	await _ski(o + Vector3(0, 0.8 - 118.5 * tan(deg_to_rad(20.0)), 118.5), Vector3(0, -6, 16))
+	p.ai_jump = true
+	await frames(2)
+	p.ai_jump = false
+	var lip_up := p.velocity.dot(Basis(Vector3.RIGHT, deg_to_rad(20.0)) * Vector3.UP)
+	check("a jump right at the lip pops %.1f m/s off the snow, mid-slope %.1f (x%.2f)" % [lip_up, mid_up, t.ski_pop], lip_up > mid_up * (t.ski_pop - 0.1) and mid_up > t.jump_speed * 0.9,
+		"lip %.1f, mid %.1f, lip at z %.0f" % [lip_up, mid_up, lip_z])
+	await frames(90)
+
+	# S6. Spins: a clean full spin lands with ski_trick_boost more speed than no spin; a half spin trips you
+	var landed := []
+	var dy := 30.0 * tan(deg_to_rad(25.0))
+	for spin_frames in [0, roundi(TAU / t.ski_spin_rate * 60.0), roundi(PI / t.ski_spin_rate * 60.0)]:
+		await _ski(Vector3(o.x + 80, flat_y + 0.8, 4), Vector3(0, 0, 12))
+		p.global_position = Vector3(o.x + 80, flat_y - dy + 7.0, 30)
+		p.velocity = Vector3(0, 0, 12)
+		await physics_frame
+		if spin_frames > 0:
+			p.ai_move = Vector2(1, 0)
+			await frames(spin_frames)
+			p.ai_move = Vector2.ZERO
+		for i in 120:
+			await physics_frame
+			if p.is_on_floor():
+				break
+		await frames(2)
+		landed.append(_speed())
+	check("landing a clean full spin is %.1f m/s faster than no spin; landing a half spin is %.1f slower (a stumble)" % [landed[1] - landed[0], landed[0] - landed[2]],
+		landed[1] - landed[0] > t.ski_trick_boost * 0.7 and landed[2] < landed[0] * 0.8, "plain %.1f, full spin %.1f, half spin %.1f" % landed)
+
+	# S7. Landings: a big drop onto a downslope pays out ski_land_boost; onto the flat it costs (ski_flat_land)
+	await _ski(Vector3(flat_x, flat_y + 0.8, 4), Vector3(0, 0, 14))
+	p.global_position = Vector3(flat_x, flat_y + 8.0, 40)
+	p.velocity = Vector3(0, 0, 14)
+	for i in 120:
+		await physics_frame
+		if p.is_on_floor():
+			break
+	await frames(1)
+	var on_flat := _speed()
+	await _ski(Vector3(o.x + 80, flat_y + 0.8, 4), Vector3(0, 0, 14))
+	p.global_position = Vector3(o.x + 80, flat_y - dy + 8.0, 30)
+	p.velocity = Vector3(0, 0, 14)
+	var tangent := 0.0
+	for i in 120:
+		await physics_frame
+		if p.is_on_floor():
+			break
+	await frames(1)
+	var on_slope := _speed()
+	check("dropping 8 m at 14 m/s: onto the flat you keep %.1f m/s, onto a 25° downslope %.1f" % [on_flat, on_slope],
+		on_flat < 14.0 * t.ski_flat_land + 1.0 and on_slope > 14.0 + t.ski_land_boost * 0.5 and p.surfing, "flat %.1f, slope %.1f" % [on_flat, on_slope])
+
+	# S8. Gates: through one adds ski_gate_boost; past one, outside its flags, costs ski_gate_miss
+	var gate := SkiGate.make(level, Vector3(flat_x - 2.5, flat_y, 30), Vector3(flat_x + 2.5, flat_y, 30))
+	var jumps := []
+	for dx in [0.0, 4.0]:
+		await _ski(Vector3(flat_x + dx, flat_y + 0.8, 20), Vector3(0, 0, 15))
+		var prev := _speed()
+		var at_gate := 0.0
+		for i in 60:
+			await physics_frame
+			if p.global_position.z > 30.0 and at_gate == 0.0:
+				at_gate = _speed() / prev
+			prev = _speed()
+		jumps.append(at_gate)
+	var through: float = (jumps[0] - 1.0) * 15.0
+	var missed: float = jumps[1]
+	check("a gate adds %.1f m/s; skiing past outside its flags keeps %.0f%% of your speed" % [through, missed * 100.0],
+		through > t.ski_gate_boost * 0.8 and missed < t.ski_gate_miss + 0.05, "through +%.2f, missed x%.2f" % [through, missed])
+	gate.queue_free()
+
+	# S9. Trees: clip one and you stumble (speed down to ski_stumble, no steering a moment) but stay on your skis
+	level.ski.tree(Vector3(flat_x + 0.6, flat_y, 60))
+	await _ski(Vector3(flat_x, flat_y + 0.8, 45), Vector3(0, 0, 16))
+	var stumbled := false
+	for i in 90:
+		await physics_frame
+		if p._stumble_t > 0.0:
+			stumbled = true
+			break
+	await frames(2)
+	check("clipping a tree at 16 m/s drops you to %.1f m/s and you stay on your skis" % _speed(), stumbled and _speed() < 16.0 * t.ski_stumble + 1.5 and p.surfing,
+		"stumbled %s, speed %.1f, skiing %s" % [stumbled, _speed(), p.surfing])
+
+	# S10. Ice: on the ice sheet the stick doesn't steer
+	await _ski(m["ski_ice"], Vector3(0, -2, 14))
+	await frames(3)
+	p.ai_move = Vector2(1, 0)
+	await frames(30)
+	var ice_x := absf(p.velocity.x)
+	p.ai_move = Vector2.ZERO
+	check("on ice, half a second of full stick turns you %.2f m/s sideways (none)" % ice_x, ice_x < 0.3 and p.surfing, "x speed %.2f" % ice_x)
+
+	# S11. Wind: the crosswind pushes you sideways without any stick
+	await _ski(m["ski_wind"], Vector3(0, -2, 12))
+	await frames(60)
+	var blown := p.velocity.x
+	check("a second in the crosswind blows you %.1f m/s sideways" % blown, blown > 5.0, "x speed %.1f" % blown)
+
+	# S12. Duck bar: tucked you pass under it; upright you clip it and stop short
+	var past := []
+	for tuck in [true, false]:
+		await _ski(m["ski_duck"], Vector3(0, -2, 14))
+		p.ai_move = Vector2(0, 1) if tuck else Vector2.ZERO
+		await frames(90)
+		past.append(p.global_position.z > float(m["ski_duck_z"]) + 1.0)
+		p.ai_move = Vector2.ZERO
+	check("tucked you duck under the bar; upright you clip it", past[0] and not past[1], "tucked past %s, upright past %s" % past)
+
+	# S13. Rail: drop onto the fallen trunk on your skis, grind it, land and ski on
+	var ra: Vector3 = m["ski_rail_a"]
+	await _ski(ra + Vector3(0, 1.2, -1.0), Vector3(0, -2, 12))
+	p.global_position = ra + Vector3(0, 1.0, 0.5)
+	p.velocity = Vector3(0, -1, 12)
+	var ground := false
+	for i in 200:
+		await physics_frame
+		if p.rail != null:
+			ground = true
+		if ground and p.rail == null and p.is_on_floor():
+			break
+	await frames(3)
+	check("a fallen-trunk rail grinds on your skis and you land skiing", ground and p.surfing and p.is_on_floor(), "ground %s, skiing %s" % [ground, p.surfing])
+
+	# S14. Gap: tucked down to the lip, pop and clear the 10 m rock gap; go off without jumping and you fall in
+	var cleared := []
+	for jump in [true, false]:
+		await _ski(m["ski_gap"], Vector3(0, -2, 12))
+		p.ai_move = Vector2(0, 1)
+		var jumped := false
+		for i in 300:
+			await physics_frame
+			if jump and not jumped and p.global_position.z > float(m["ski_gap_lip_z"]) - 1.6:
+				p.ai_jump = true
+				jumped = true
+			elif jumped:
+				p.ai_jump = false
+			if p.is_on_floor() and p.global_position.z > float(m["ski_gap_far_z"]) + 1.0:
+				break
+			if p.global_position.z < float(m["ski_gap"].z) - 1.0: # put back at the station: fell in
+				break
+		cleared.append(p.global_position.z > float(m["ski_gap_far_z"]) and p.is_on_floor())
+		p.ai_move = Vector2.ZERO
+		p.ai_jump = false
+	check("tucked with a pop at the lip you clear the 10 m rock gap; without the jump you fall in", cleared[0] and not cleared[1], "with jump %s, without %s" % cleared)
+
+	# S15. Cliff: ski off the 7 m cliff onto the 30° slope and keep your speed (more, with the landing boost)
+	await _ski(m["ski_cliff"], Vector3(0, 0, 15))
+	var before_cliff := 0.0
+	var after_cliff := 0.0
+	var left_lip := false
+	for i in 240:
+		await physics_frame
+		if not left_lip and p.global_position.z > float(m["ski_cliff_lip_z"]):
+			left_lip = true
+			before_cliff = Vector2(p.velocity.x, p.velocity.z).length()
+		if left_lip and p.is_on_floor() and p.global_position.y < float(m["ski_cliff"].y) - 4.0:
+			await frames(1)
+			after_cliff = _speed()
+			break
+	check("off the 7 m cliff at %.1f m/s you land on the 30° slope at %.1f m/s, still skiing" % [before_cliff, after_cliff],
+		left_lip and after_cliff >= before_cliff and p.surfing, "lip %.1f, landed %.1f, skiing %s" % [before_cliff, after_cliff, p.surfing])
+
+	# S16. Boost pad and launch pad on skis: the boost pad sends you off at boost_pad_speed; the launch pad over the 14 m gap
+	await _ski(m["ski_boost"], Vector3(0, 0, 10))
+	var boosted := 0.0
+	for i in 60:
+		await physics_frame
+		boosted = maxf(boosted, _speed())
+	await _ski(m["ski_launch"], Vector3(0, 0, 10))
+	var flew := false
+	for i in 240:
+		await physics_frame
+		if p.global_position.z > float(m["ski_launch_lip_z"]) + 14.0 and p.is_on_floor():
+			flew = true
+			break
+	check("on skis the boost pad sends you to %.0f m/s, and the launch pad carries you over the 14 m gap" % boosted, boosted > t.boost_pad_speed - 1.0 and flew and p.surfing,
+		"boosted %.1f, across %s, skiing %s" % [boosted, flew, p.surfing])
+
+	# S17. Snow bridge: ski across fast and it holds; stop on it and it gives way
+	var bridge_top: Vector3 = m["ski_bridge"]
+	await _ski(bridge_top + Vector3(0, 0.8 + 10.0 * tan(deg_to_rad(14.0)), -10), Vector3(0, -2, 16))
+	await frames(60)
+	var crossed_fast := p.global_position.z > bridge_top.z + 5.0 and p.global_position.y > bridge_top.y - 6.0
+	await _ski(bridge_top + Vector3(0, 0.8, 0), Vector3.ZERO)
+	p.ai_guard = false
+	p.surfing = false
+	await frames(30)
+	var gave := p.global_position.y < bridge_top.y - 1.0 or p.global_position.z < bridge_top.z - 5.0
+	check("a snow bridge holds while you ski across over %.0f m/s; stop on it and it collapses" % t.ski_bridge_speed, crossed_fast and gave, "fast across %s, gave way %s" % [crossed_fast, gave])
+	await frames(20)
+
+	# S18. Lash post: hooked while skiing, the rope swings you round the hairpin keeping your speed
+	var post_at: Vector3 = m["ski_post"]
+	var finish_y := post_at.y - 1.5
+	await _ski(Vector3(post_at.x - 6.0, finish_y + 0.8, post_at.z - 1.0), Vector3(0, 0, 14))
+	var post_node: Node3D = null
+	for n in get_nodes_in_group("lash_posts"):
+		if (n as Node3D).global_position.distance_to(post_at) < 0.1:
+			post_node = n
+	p._ski_hook(post_node)
+	var turned := false
+	for i in 180:
+		await physics_frame
+		if p.velocity.z < -9.0:
+			turned = true
+			break
+	check("lashed to a post skiing at 14 m/s, you swing round the hairpin and head back at %.1f m/s" % _speed(), turned and _speed() > 12.0, "heading %s, speed %.1f" % [p.velocity, _speed()])
+	await frames(40)
+
+	# S19. Speed shows: at boost speed the view widens, the camera rises and pulls back, and speed lines stream
+	var rig: CameraRig = get_nodes_in_group("camera_rig")[0]
+	await _ski(Vector3(flat_x, flat_y + 0.8, 4), Vector3(0, 0, 5))
+	await frames(60)
+	var slow_fov := rig.cam.fov
+	var slow_len := rig.arm.spring_length
+	var slow_lines := rig.lines.emitting
+	await _ski(o + Vector3(0, 0.8, 4), Vector3(0, 0, t.boost_speed))
+	var fast_fov := 0.0
+	var fast_len := 0.0
+	var fast_lines := false
+	var rose := 0.0
+	for i in 60:
+		await physics_frame
+		p.velocity = p.velocity.normalized() * t.boost_speed
+		fast_fov = rig.cam.fov
+		fast_len = rig.arm.spring_length
+		fast_lines = fast_lines or rig.lines.emitting
+		rose = rig.speed_k * t.ski_cam_rise
+	check("at %.0f m/s the view widens from %.0f° to %.0f°, the camera pulls back %.0f%%, rises %.1f m and speed lines stream" % [t.boost_speed, slow_fov, fast_fov, (fast_len / slow_len - 1.0) * 100.0, rose],
+		fast_fov > slow_fov + t.ski_fov * 0.6 and fast_len > slow_len * 1.2 and fast_lines and not slow_lines and rose > t.ski_cam_rise * 0.6,
+		"fov %.1f/%.1f, arm %.1f/%.1f, lines %s/%s" % [slow_fov, fast_fov, slow_len, fast_len, slow_lines, fast_lines])
+
+	# S20. Lean and landing squash: a hard turn leans you into it; a big landing squashes you
+	await _ski(Vector3(flat_x, flat_y + 0.8, 10), Vector3(0, 0, 14))
+	p.ai_move = Vector2(1, 0)
+	await frames(20)
+	var lean := p.ski_lean
+	p.ai_move = Vector2.ZERO
+	p.global_position += Vector3.UP * 6.0
+	var squash := 0.0
+	for i in 120:
+		await physics_frame
+		if p.is_on_floor():
+			await physics_frame
+			squash = p._land_sq
+			break
+	check("a hard turn leans you %.2f into it; a 6 m landing squashes you %.0f%%" % [absf(lean), squash * 100.0], absf(lean) > 0.4 and squash > 0.15,
+		"lean %.2f, squash %.2f" % [lean, squash])
+	p.ai_guard = false
+	await frames(10)
+	steep.queue_free()
+	flat.queue_free()
+	drop.queue_free()
 
 ## The Works: iron filling pits, doors held open, and Winch's racks, arm gears, screws and gear trains.
 func _works_tests(arena: Vector3) -> void:
