@@ -268,7 +268,7 @@ func warp(key: String) -> void:
 	player.up_direction = Vector3.UP
 	player.target = null
 	if rig != null:
-		rig.global_position = player.global_position
+		rig.snap()
 
 func _open_entry(mode: String, title: String) -> void:
 	entry_mode = mode

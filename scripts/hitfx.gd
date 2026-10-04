@@ -19,6 +19,11 @@ static func hit(tree: SceneTree, at: Vector3, t: Tuning, strength := 1.0, who: N
 	if who != null and is_instance_valid(who) and who.has_method("impact"):
 		rumble = who.impact(strength, t)
 	shake(tree, t.shake_hit * strength * rumble)
+	if freeze > 0.0 or strength >= 2.0:
+		# a big hit kicks the camera along the blow
+		var p := tree.get_first_node_in_group("player") as Node3D
+		if p != null:
+			punch(tree, at - p.global_position, strength * 0.5)
 	stop(tree, freeze)
 
 ## Freeze the whole game for secs of real time.
@@ -30,6 +35,11 @@ static func stop(tree: SceneTree, secs: float) -> void:
 	await tree.create_timer(secs, true, false, true).timeout
 	Engine.time_scale = 1.0
 	_stopping = false
+
+## Kick the camera along dir (big hits, and when you're hit).
+static func punch(tree: SceneTree, dir: Vector3, amount: float) -> void:
+	for n in tree.get_nodes_in_group("camera_rig"):
+		n.punch(Vector3(dir.x, dir.y * 0.3, dir.z), amount)
 
 static func shake(tree: SceneTree, amount: float) -> void:
 	for n in tree.get_nodes_in_group("camera_rig"):

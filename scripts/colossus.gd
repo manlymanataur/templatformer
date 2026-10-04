@@ -38,6 +38,7 @@ static func build(level: Node3D) -> Colossus:
 	var c := Colossus.new()
 	c.lv = level
 	c.t = level.t
+	c.add_to_group("powerful") # the camera drops low and looks up at it
 	c._place()
 	level.add_child(c)
 	c._make()

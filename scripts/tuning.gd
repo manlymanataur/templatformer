@@ -152,8 +152,30 @@ extends Resource
 @export var crate_push_speed := 2.5 ## how fast you push a crate
 @export var crate_burn := 4.0 ## a burning crate burns away after this long
 @export var cam_distance := 7.0
-@export var cam_lag := 10.0
-@export var cam_recenter_delay := 0.8
+@export var cam_recenter_delay := 2.0 ## seconds after you last moved the camera before it swings behind you again (was 0.8)
+# the camera overhaul (jovi, 2026-10-04)
+@export var cam_follow := 9.0 ## how stiffly the camera follows you sideways (spring, per second)
+@export var cam_follow_y := 5.0 ## ...and up and down (softer, so jumps don't jerk the view)
+@export var cam_look_ahead := 2.5 ## at top speed the camera looks this far ahead of you (more skiing and boosting)
+@export var cam_ease_out := 3.0 ## after a wall pushed the camera in, it eases back out this stiffly
+@export var cam_climb_tilt := 0.4 ## climbing, wall sliding or bouncing up trees, the view tilts up this many radians
+@export var cam_high_angle := 0.35 ## small or hanging from a ledge, the camera looks down on you this much more
+@export var cam_low_angle := 0.3 ## near a powerful foe (brutes, the colossus), it drops low and looks up this much
+@export var cam_long_lens := 16.0 ## near a powerful foe the lens narrows this many degrees (the camera backs off to match)
+@export var cam_open_min := 0.75 ## in tight rooms the camera sits this much closer...
+@export var cam_open_max := 1.3 ## ...and in wide open spaces this much further out
+@export var cam_pack_range := 14.0 ## monsters this close are framed with you
+@export var cam_dolly := 24.0 ## dolly zoom (cliff edges, big launches, big drops): the view widens this many degrees as the camera closes in
+@export var cam_dip := 0.06 ## a hard landing dips the camera by this much per m/s of fall over 10
+@export var cam_punch := 0.35 ## a big hit kicks the camera this far along the blow
+@export var cam_bank := 0.35 ## the camera rolls this much with banked ground (share of the bank)
+@export var cam_dutch := 0.05 ## drunk or on your last heart, the view tilts up to this many radians
+@export var cam_blur := 1.0 ## motion blur strength at speed and on fast pans (0 turns it off)
+@export var cam_dof := 1.0 ## the soft edges in combat and lock-on (0 turns it off)
+@export var wall_slide_ramp := 8.0 ## the longer you slide down a wall or tree, the faster: this much m/s faster per second
+@export var wall_slide_brake := 25.0 ## hitting a wall falling fast, it slows you only this fast (m/s per s)
+@export var crumble_delay := 0.5 ## a crumbling ledge gives way this long after you step on it
+@export var crumble_regrow := 4.0 ## and comes back this long after
 # powers combat (Power Combat Sketchbook II, jovi 2026-10-01)
 @export var seed_throw_speed := 7.0 ## a thrown seed cube keeps the old bomb throw (bombs got shorter)
 @export var seed_throw_up := 5.0
@@ -197,7 +219,7 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", 
 	"air_accel", "air_turn", "gravity", "jump_speed", "jump_cut", "coyote_time", "jump_buffer", "slope_factor",
 	"jump_combo_window", "double_jump_mult", "triple_jump_mult", "triple_min_speed", "wall_slide_speed", "wall_jump_speed",
 	"wall_jump_up", "wall_jump_side", "wall_coyote", "wall_jump_aim", "wall_jump_aim_cone", "roll_speed", "roll_time", "roll_invuln", "strafe_speed", "hammer_hold", "spin_charge_time", "spin_over_time", "charge_speed", "run_attack_speed", "fast_blade_speed", "perfect_guard", "parry_time", "guard_speed", "guard_push", "guard_push_heavy", "guard_wall", "guard_break", "brace_time", "impale_speed", "impale_damage", "impale_stun", "stuck_time", "surf_friction", "surf_turn", "surf_min", "focus_near", "focus_far", "focus_rate", "bomb_throw_speed",
-	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "crank_ratio", "screw_notch", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "hitstop_kill", "hitstop_spike", "squash", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_lag", "cam_recenter_delay",
+	"bomb_throw_up", "dodge_tap_time", "candle_range", "candle_touch", "umbra_speed", "umbra_crawl_speed", "magnet_range", "iron_speed", "small_scale", "small_speed_mult", "small_jump_mult", "small_swim_speed", "magnet_fly_speed", "magnet_fly_range", "lash_range", "lash_pull_speed", "leash_length", "spider_speed", "gear_ratio", "crank_ratio", "screw_notch", "trunk_height", "root_length", "spear_drop", "climb_speed", "ledge_reach", "bomb_regrow", "spider_break", "colossus_speed", "pound_speed", "pound_hover", "pound_jump_window", "pound_jump_mult", "pound_slide", "long_jump_speed", "long_jump_up", "long_jump_keep", "ledge_long_mult", "hitstop", "hitstop_kill", "hitstop_spike", "squash", "shake_hit", "dodge_slow_time", "dodge_slow_speed", "homing_range", "homing_speed", "pogo_speed", "rail_min_speed", "boost_pad_speed", "boost_hold", "cam_distance", "cam_recenter_delay",
 	"seed_throw_speed", "seed_throw_up", "bomb_throw_keep", "bomb_friction", "bomb_bat_speed", "bomb_bat_up", "bomb_jump_speed", "pincer_window", "pincer_bonus", "knight_magnet_range",
 	"knight_pull_speed", "knight_open_time", "knight_push_knock", "knight_magnet_cd", "iron_plough_knock", "fire_spread_delay", "fire_damage_every",
 	"rope_skip_height", "rope_skip_width", "spider_bite_reach", "spider_bite_every", "spider_bite_damage", "spider_pilot_bite", "spider_pilot_bite_time",
@@ -205,4 +227,6 @@ const EDITABLE: Array[String] = ["top_speed", "boost_speed", "overspeed_decay", 
 	"pot_throw_speed", "pot_throw_run", "pot_throw_up", "pot_respawn", "honey_slow", "honey_jump", "honey_cover", "candy_heat_time", "heat_reach", "candle_heat", "swap_range", "drunk_time", "drunk_sway", "drunk_monster_time", "wet_time", "wine_burn", "lure_range", "crate_push_speed", "crate_burn",
 	"step_height", "launch_up", "ski_grip_slow", "ski_grip_fast", "ski_turn_drag", "ski_carve_time", "ski_carve_boost", "ski_tuck_gain", "ski_tuck_turn", "ski_brake",
 	"ski_pop", "ski_spin_rate", "ski_spin_accel", "ski_spin_drag", "speed_lines_from", "ski_trick_boost", "ski_flat_land", "ski_land_boost", "ski_stumble", "ski_stumble_time", "ski_bridge_speed",
-	"ski_fov", "ski_cam_rise"]
+	"ski_fov", "ski_cam_rise", "cam_follow", "cam_follow_y", "cam_look_ahead", "cam_ease_out", "cam_climb_tilt", "cam_high_angle", "cam_low_angle",
+	"cam_long_lens", "cam_open_min", "cam_open_max", "cam_pack_range", "cam_dolly", "cam_dip", "cam_punch", "cam_bank", "cam_dutch", "cam_blur", "cam_dof",
+	"wall_slide_ramp", "wall_slide_brake", "crumble_delay", "crumble_regrow"]

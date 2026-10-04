@@ -82,6 +82,6 @@ static func apply(p: Player, d: Dictionary, rig: CameraRig = null) -> bool:
 		p.lock_dir = p.facing
 	if rig != null:
 		rig.yaw = float(d.get("yaw", rig.yaw))
-		rig.global_position = p.global_position
+		rig.snap()
 	inv.changed.emit()
 	return true
