@@ -81,6 +81,7 @@ var ski_braking := false ## surfing with the stick back: skidding to a stop
 var ski_carve := 0.0 ## 0-1: a turn held the same way fills it; letting go pays it out as speed
 var ski_lean := 0.0 ## -1..1, how hard you're leaning into the turn (the body and camera roll with it)
 var ski_spin := 0.0 ## radians spun in the air this jump
+var ski_spin_v := 0.0 ## how fast you're spinning (radians per second): it winds up and carries on after you let go
 var ski_post: Node3D = null ## surfing, the lash hooked a post: you swing round it
 var _carve_side := 0.0
 var _stumble_t := 0.0
@@ -403,6 +404,7 @@ func teleport(pos: Vector3) -> void:
 	velocity = Vector3.ZERO
 	up_direction = Vector3.UP
 	_vault_to = Vector3.ZERO
+	_wall_t = 0.0 # no wall jump off a wall you left behind
 	platform_on_leave = CharacterBody3D.PLATFORM_ON_LEAVE_DO_NOTHING
 	_teleported = 2
 
@@ -415,6 +417,7 @@ func respawn() -> void:
 	roll_t = 0.0
 	surfing = false
 	ski_spin = 0.0
+	ski_spin_v = 0.0
 	ski_post = null
 	guard_break_t = 0.0
 	focus_meter = 0.0
@@ -502,6 +505,12 @@ func use_lash() -> void:
 	var dir := _flat_facing()
 	if target != null and is_instance_valid(target):
 		dir = (target.global_position - from).normalized()
+	elif surfing and is_on_floor():
+		var post := _ski_post_ahead()
+		if post != null:
+			dir = (post.global_position - from).normalized() # skiing: it finds the post beside your line
+		else:
+			dir = (dir - up_direction * dir.dot(up_direction)).normalized() # or cracks along the slope
 	var to := from + dir * t.lash_range
 	var q := PhysicsRayQueryParameters3D.create(from, to, 1 | 1 << 4, [get_rid()])
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
@@ -679,7 +688,7 @@ func hurt(amount: int, from: Vector3, by: Node = null, heavy := false) -> void:
 ## Can the shield go up right now? (The poleaxe and shield come together.)
 func can_guard() -> bool:
 	return inventory.has("poleaxe") and not hands_full() and guard_break_t <= 0.0 and roll_t <= 0.0 and pound_t < 0.0 \
-		and homing == null and pilot == null and rail == null and hang == Vector3.ZERO and climbing == null and grapple_t <= 0.0
+		and homing == null and pilot == null and hang == Vector3.ZERO and climbing == null and grapple_t <= 0.0
 func guarding() -> bool:
 	return guard_t >= 0.0
 func braced() -> bool:
@@ -1014,6 +1023,7 @@ func _ground_step(dt: float, wish: Vector3) -> void:
 	var sp := v.length()
 	var w := wish - n * wish.dot(n)
 	var top := (t.strafe_speed if target_held else t.top_speed) * _size_mult()
+	var grip := t.ice_grip if _floor_in("ice") else 1.0 # ice: you slide about
 	if guarding():
 		top = t.guard_speed * _size_mult()
 	elif poleaxe.frozen:
@@ -1021,22 +1031,24 @@ func _ground_step(dt: float, wish: Vector3) -> void:
 	if w.length() > 0.05:
 		var wd := w.normalized()
 		if sp > 1.0 and v.normalized().dot(wd) < -0.3 and not target_held:
-			v = v.move_toward(Vector3.ZERO, t.brake * dt)
+			v = v.move_toward(Vector3.ZERO, t.brake * grip * dt)
 		else:
 			if sp > 0.5:
 				var rate := lerpf(t.turn_rate, t.turn_rate_fast, clampf(sp / t.boost_speed, 0.0, 1.0))
 				if target_held:
 					rate = t.turn_rate * 2.0 # strafing is nimble
-				v = _turn(v.normalized(), wd, rate * dt) * sp
+				v = _turn(v.normalized(), wd, rate * grip * dt) * sp
 			var cap := top * w.length()
 			if sp < cap:
-				v += wd * t.accel * dt
+				v += wd * t.accel * grip * dt
 				if v.length() > cap:
 					v = v.normalized() * cap
 			elif target_held and sp > cap:
 				v = v.move_toward(v.normalized() * cap, t.friction * dt)
+			elif sp > cap and absf((g - n * g.dot(n)).dot(v / sp)) < 1.0 and boost_t <= 0.0 and sp <= top:
+				v = v.move_toward(v.normalized() * cap, t.friction * grip * dt) # half a push walks, not drifts
 	else:
-		v = v.move_toward(Vector3.ZERO, t.friction * dt)
+		v = v.move_toward(Vector3.ZERO, t.friction * grip * dt)
 	var slope_pull := (g - n * g.dot(n)).dot(v.normalized())
 	if v.length() > top and absf(slope_pull) < 1.0 and boost_t <= 0.0: # on the flat, overspeed bleeds back (not right after a boost pad); slopes act as usual
 		v = v.move_toward(v.normalized() * top, t.overspeed_decay * dt)
@@ -1053,6 +1065,8 @@ func _air_step(dt: float, wish: Vector3, jump_held: bool) -> void:
 	var hv := Vector3(velocity.x, 0, velocity.z)
 	if wish.length() > 0.05 and wall_lock <= 0.0:
 		var cap := maxf(t.top_speed * _size_mult(), hv.length())
+		if hv.length() > 0.5 and hv.normalized().dot(wish.normalized()) > -0.5:
+			hv = _turn(hv.normalized(), wish.normalized(), t.air_turn * dt) * hv.length() # swing your drift round
 		hv = (hv + wish * t.air_accel * dt).limit_length(cap)
 		velocity.x = hv.x
 		velocity.z = hv.z
@@ -1066,6 +1080,13 @@ func _air_step(dt: float, wish: Vector3, jump_held: bool) -> void:
 		wn = wn.normalized()
 	if wall and velocity.y < 0.0 and wish.dot(-wn) > 0.3 and carrying == null and held_seed == null and _grab_ledge(wn):
 		return
+	var tree := _wall_tree() if wall else null
+	if tree != null and wall_lock <= 0.0:
+		# a tree: you cling to it whichever way the stick points, so you can bounce from tree to tree
+		velocity.x = -wn.x * 1.0
+		velocity.z = -wn.z * 1.0
+		if velocity.y < -t.wall_slide_speed:
+			velocity.y = -t.wall_slide_speed
 	_wall_t -= dt
 	if wall:
 		_wall_n = wn
@@ -1120,13 +1141,49 @@ func _wall_jump(wn: Vector3, wish := Vector3.ZERO) -> void:
 	var along := Vector3(velocity.x, 0, velocity.z)
 	along -= wn * along.dot(wn)
 	var h := wn * t.wall_jump_speed + side * t.wall_jump_side + along * 0.5
+	h = _aim_at_tree(h)
 	velocity = h + Vector3.UP * t.wall_jump_up
 	facing = h.normalized()
 	_wall_t = 0.0
-	jumping = true
+	jumping = false # a wall kick is always full height: the jump cut is for ground jumps
 	buffer = 0.0
 	wall_lock = 0.18
 	jump_chain = 0
+
+## The tree (group trees) or trunk you're touching as a wall in the air, if any.
+func _wall_tree() -> Node3D:
+	for i in get_slide_collision_count():
+		var c := get_slide_collision(i)
+		var o := c.get_collider() as Node3D
+		if o != null and absf(c.get_normal().y) < 0.4 and (o.is_in_group("trees") or o.is_in_group("trunks")):
+			return o
+	return null
+
+## Kicking off: if another tree or trunk stands within wall_jump_aim ahead (inside wall_jump_aim_cone of the kick),
+## bend the kick straight at it so tree-to-tree bounces line up (jovi, 2026-10-04).
+func _aim_at_tree(h: Vector3) -> Vector3:
+	var flat := Vector3(h.x, 0, h.z)
+	if flat.length() < 0.5:
+		return h
+	var best: Node3D = null
+	var best_a := deg_to_rad(t.wall_jump_aim_cone)
+	for g in ["trees", "trunks"]:
+		for n in get_tree().get_nodes_in_group(g):
+			var tr := n as Node3D
+			var d := tr.global_position - global_position
+			d.y = 0.0
+			if d.length() < 1.5 or d.length() > t.wall_jump_aim:
+				continue
+			var a := flat.angle_to(d)
+			if a < best_a:
+				best_a = a
+				best = tr
+	if best == null:
+		return h
+	var to := best.global_position - global_position
+	to.y = 0.0
+	var aimed := to.normalized() * flat.length()
+	return Vector3(aimed.x, h.y, aimed.z)
 
 func _start_roll(wish: Vector3) -> void:
 	_ledge_roll = false
@@ -1393,7 +1450,7 @@ func _climb_step(wish: Vector3, jump_pressed: bool) -> bool:
 	climbing = hit["collider"]
 	facing = -n
 	if jump_pressed:
-		velocity = n * t.wall_jump_speed + Vector3.UP * t.wall_jump_up
+		velocity = _aim_at_tree(n * t.wall_jump_speed) + Vector3.UP * t.wall_jump_up
 		wall_lock = 0.2
 		climbing = null
 		return true
@@ -1478,7 +1535,7 @@ func _hang_step(wish: Vector3, jump_pressed: bool) -> void:
 	if jump_pressed or into > 0.5:
 		velocity = -hang_n * 3.5 + Vector3.UP * 8.0
 		hang = Vector3.ZERO
-		air_lock = 0.1
+		air_lock = 0.25 # the whole hop up, so the floor doesn't snap you down at the lip
 		_ledge_up_t = 0.0
 	elif into < -0.5:
 		velocity = hang_n * 2.0
@@ -1593,22 +1650,28 @@ func _ski_can_start() -> bool:
 	var n := get_floor_normal()
 	return n.y < 0.98 or flat_speed() > t.surf_min
 
-## In the air off your skis: the stick spins you (a trick if you land square, a stumble if you don't).
+## In the air off your skis: the stick winds up a spin that carries on after you let go (a trick if you land
+## square, a stumble if you don't).
 func _ski_air_step(dt: float, wish: Vector3) -> void:
 	_ski_air_t += dt
 	if rail != null or hang != Vector3.ZERO or climbing != null:
 		ski_spin = 0.0
+		ski_spin_v = 0.0
 		return
 	var f := _flat_facing()
 	var side := wish.dot(Vector3.UP.cross(f))
 	if absf(side) > 0.5:
-		ski_spin += signf(side) * t.ski_spin_rate * dt
+		ski_spin_v = move_toward(ski_spin_v, signf(side) * t.ski_spin_rate, t.ski_spin_accel * dt) # wind it up
+	else:
+		ski_spin_v = move_toward(ski_spin_v, 0.0, t.ski_spin_drag * dt) # let go: it carries on, slowing
+	ski_spin += ski_spin_v * dt
 
 ## Touching down on your shield: spins pay out or trip you; a big drop onto a downslope pays out, onto the flat
 ## it costs you (Sonic); either way you squash.
 func _ski_land() -> void:
 	if _ski_air_t < 0.15:
 		ski_spin = 0.0 # only a bump: not a landing
+		ski_spin_v = 0.0
 		return
 	var n := get_floor_normal()
 	if n == Vector3.ZERO:
@@ -1625,6 +1688,7 @@ func _ski_land() -> void:
 			h *= t.ski_stumble # landed sideways
 			_stumble_t = t.ski_stumble_time
 	ski_spin = 0.0
+	ski_spin_v = 0.0
 	if vn > 10.0 and _ski_air_t > 0.5 and h.length() > 0.5:
 		if n.y < 0.97 and h.y < -0.05 * h.length():
 			h += h.normalized() * t.ski_land_boost # a drop onto a downslope: the compression pays out
@@ -1659,7 +1723,24 @@ func _ski_after_move(pre: Vector3, dt: float) -> void:
 		Hitfx.sparks(get_tree(), c.get_position(), 0.8)
 		return
 
-## Lash a post while skiing: the rope holds you at its length and you swing round, keeping your speed.
+## Skiing, the lash finds the nearest post in reach that's no further than 80° off your line.
+func _ski_post_ahead() -> Node3D:
+	var travel := Vector3(velocity.x, 0, velocity.z)
+	if travel.length() < 1.0:
+		travel = _flat_facing()
+	var best: Node3D = null
+	var best_d := t.lash_range
+	for n in get_tree().get_nodes_in_group("lash_posts"):
+		var post := n as Node3D
+		var d := post.global_position - global_position
+		var flat := Vector3(d.x, 0, d.z)
+		if flat.length() < best_d and travel.angle_to(flat) < deg_to_rad(80.0):
+			best_d = flat.length()
+			best = post
+	return best
+
+## Lash a post while skiing: the rope reels in as you close on the post and holds you at your closest pass, so
+## you swing round it there, keeping your speed.
 func _ski_hook(post: Node3D) -> void:
 	ski_post = post
 	var r := global_position - post.global_position
@@ -1673,6 +1754,7 @@ func _ski_swing(v: Vector3, n: Vector3) -> Vector3:
 		return v
 	var r := global_position - ski_post.global_position
 	r.y = 0.0
+	_ski_post_r = minf(_ski_post_r, maxf(r.length(), 1.0)) # the rope reels in, never out
 	var sp := v.length()
 	if r.length() >= _ski_post_r - 0.05 and sp > 0.1:
 		var rn := r.normalized()
@@ -1685,15 +1767,6 @@ func _ski_swing(v: Vector3, n: Vector3) -> Vector3:
 	if _ski_post_a > PI * 0.95:
 		ski_post = null # round the hairpin: it lets go
 	return v
-
-## A gate passed (boost) or missed (penalty). See SkiGate.
-func ski_gate(passed: bool) -> void:
-	var h := velocity
-	if passed:
-		velocity += (h.normalized() if h.length() > 0.1 else _flat_facing()) * t.ski_gate_boost
-	else:
-		velocity *= t.ski_gate_miss
-		Hitfx.shake(get_tree(), 0.06)
 
 func _spray_burst(amount: int) -> void:
 	if _spray == null:
@@ -1910,7 +1983,7 @@ func _homing_step(dt: float) -> void:
 
 ## Landing on or near a rail from above starts a grind.
 func _catch_rail() -> bool:
-	if _rail_cool > 0.0 or velocity.y > 3.0:
+	if _rail_cool > 0.0 or velocity.y > 3.0 or not guarding(): # only the shield surf grinds (jovi, 2026-10-04)
 		return false
 	for n in get_tree().get_nodes_in_group("rails"):
 		var r := n as Rail
@@ -1926,16 +1999,27 @@ func _catch_rail() -> bool:
 			if absf(along) < 0.5: # dropped straight on: go downhill
 				rail_dir = -1.0 if tan.y > 0.0 else 1.0
 			rail_speed = maxf(absf(along), t.rail_min_speed)
+			surfing = true
 			return true
 	return false
 
-## Grinding: you ride the rail, gaining speed downhill and losing it uphill. Jump hops off; at the end
-## you fly off with your speed.
+## Grinding on your shield: you ride the rail, gaining speed downhill and losing it uphill; slow to a stop going
+## up and you slide back down. Jump hops off, letting go of guard drops you off, and at the end you fly off with
+## your speed.
 func _rail_step(dt: float, jump_pressed: bool) -> void:
 	var tan := rail.tangent(rail_s) * rail_dir
-	rail_speed = clampf(rail_speed - t.gravity * tan.y * t.slope_factor * dt, 3.0, t.boost_speed)
+	rail_speed = minf(rail_speed - t.gravity * tan.y * t.slope_factor * dt, t.boost_speed)
+	if rail_speed < 0.0: # stalled going uphill: turn round and slide down
+		rail_dir = -rail_dir
+		rail_speed = -rail_speed
+		tan = -tan
 	rail_s += rail_speed * rail_dir * dt
 	velocity = tan * rail_speed
+	if not guarding():
+		rail = null
+		_rail_cool = 0.3
+		air_lock = 0.1
+		return
 	if jump_pressed or rail_s <= 0.0 or rail_s >= rail.length:
 		if jump_pressed:
 			velocity.y = maxf(velocity.y, 0.0) + t.jump_speed

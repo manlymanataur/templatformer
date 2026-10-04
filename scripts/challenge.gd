@@ -5,7 +5,7 @@ extends Node3D
 ## marks it cleared (the door turns gold). Fall off a course and you start it again.
 ## The rooms:
 ##   Pogo chain  pound (attack in the air) onto four spike balls in a row to bounce across a 25 m drop
-##   Rail run    two downhill rails, each kicking you across a 10 m gap
+##   Rail run    two downhill rails (shield up to grind), each kicking you across a 10 m gap
 ##   Long jump   three 10 m gaps with 4 m platforms: no runway, so pound, roll out and long-jump
 
 const BASE := 200.0 ## rooms float this high
@@ -89,9 +89,9 @@ func _pogo(o: Vector3) -> void:
 ## Downhill rail, kicker, 10 m gap to a platform; again from there.
 func _rail(o: Vector3) -> void:
 	_rect(o.x - 3, o.x + 3, o.z - 3, o.z + 3, o.y, o.y + 10, STONE)
-	Rail.make(lv, PackedVector3Array([o + Vector3(0, 10.3, -3.5), o + Vector3(0, 5.3, -24), o + Vector3(0, 6.3, -28)]))
+	Rail.make(lv, PackedVector3Array([o + Vector3(0, 10.3, -3.5), o + Vector3(0, 5.3, -24), o + Vector3(0, 7.3, -28)]))
 	_rect(o.x - 3, o.x + 3, o.z - 44, o.z - 38, o.y, o.y + 6, STONE)
-	Rail.make(lv, PackedVector3Array([o + Vector3(0, 6.3, -44.5), o + Vector3(0, 1.3, -65), o + Vector3(0, 2.3, -69)]))
+	Rail.make(lv, PackedVector3Array([o + Vector3(0, 6.3, -44.5), o + Vector3(0, 1.3, -65), o + Vector3(0, 3.3, -69)]))
 	_rect(o.x - 3, o.x + 3, o.z - 85, o.z - 79, o.y, o.y + 2, STONE)
 	start = o + Vector3(0, 10.6, 1.5)
 	goal = o + Vector3(0, 2.0, -82)

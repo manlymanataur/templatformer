@@ -10,6 +10,7 @@ var marks := {} ## named positions the tests start from
 var checker: ImageTexture
 var dev: Node ## the playtest tools (dev_menu.gd): warps, pins, god mode
 var ski: SkiRun ## the ski run (its stations and pieces)
+var mountain: MountainClimb
 
 
 func _ready() -> void:
@@ -270,6 +271,7 @@ func _build() -> void:
 	PowersYard.build(self)
 	Cellar.build(self)
 	ski = SkiRun.build(self)
+	mountain = MountainClimb.build(self)
 	add_child(Power.new())
 	add_child(Machinery.new())
 	marks["targets"] = Vector3(-2, 0.6, 5)

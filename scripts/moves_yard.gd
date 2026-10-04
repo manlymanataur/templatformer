@@ -29,7 +29,7 @@ static func build(lv: Node3D) -> void:
 	# rail off the tower's south edge: 4 m down over 22 m, then a kicker up 1.5 m over 4 m
 	Rail.make(lv, PackedVector3Array([Vector3(-20, 8.3, -75), Vector3(-20, 4.3, -97), Vector3(-20, 5.8, -101)]))
 	rect.call(-24, -16, -119, -111, 0, 2, STONE)
-	lv.label(Vector3(-20, 10, -76), "grind rail: jump on", 32)
+	lv.label(Vector3(-20, 10, -76), "grind rail: shield up (C) and step on", 32)
 	marks["moves_rail"] = Vector3(-20, 8.6, -72)
 	marks["moves_rail_land"] = -111.0 # 10 m past the rail's end
 
