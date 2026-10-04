@@ -352,6 +352,7 @@ func _combat_tests() -> void:
 	await _ski_tests()
 	await _ski_feedback_tests()
 	await _mountain_tests()
+	await _camera_tests()
 	await _works_tests(arena)
 	await _powers_tests()
 	await _cellar_tests()
@@ -455,16 +456,16 @@ func _move_tests(arena: Vector3) -> void:
 	p.ai_move = Vector2.ZERO
 	check("wall jumps reach the top of the 10 m shaft", hi > float(m["shaft_top"]), "peak %.1f m" % hi)
 
-	# 24. Wall slide: pushing into a wall caps your fall speed
+	# 24. Wall slide: pushing into a wall slows your fall at first (it speeds up the longer you slide: see W1)
 	await _fresh_player(m["shaft"] + Vector3(-1.0, 8.0, 0))
 	p.ai_move = Vector2(-1, 0)
 	var fastest := 0.0
-	for i in 40:
+	for i in 18:
 		await physics_frame
-		if i > 20:
-			fastest = maxf(fastest, -p.velocity.y)
+		fastest = maxf(fastest, -p.velocity.y)
 	p.ai_move = Vector2.ZERO
-	check("wall slide caps fall speed", fastest <= t.wall_slide_speed + 0.5, "fastest fall %.1f m/s" % fastest)
+	var grip := t.wall_slide_speed + t.wall_slide_ramp * 0.3 + 0.5
+	check("a wall slide grips at first: under %.1f m/s for 0.3 s" % grip, fastest <= grip, "fastest fall %.1f m/s" % fastest)
 
 	# 25. Roll (holding target, a quick forward tap; there's no roll button): covers ground fast and dodges a hit early on
 	await _fresh_player(arena)
@@ -3255,12 +3256,12 @@ func _ski_feedback_tests() -> void:
 	var ta: Vector3 = m["mountain_tree_l"]
 	var tb: Vector3 = m["mountain_tree_r"]
 	await _fresh_player(ta + Vector3(1.4, 0.6, 0))
-	p.global_position = ta + Vector3(1.4, 2.5, 0) # in the air beside the tree, drifting into it
+	p.global_position = ta + Vector3(1.4, 5.5, 0) # in the air beside the tree, drifting into it
 	p.velocity = Vector3(-4, 0, 0)
 	await frames(10)
 	var clung := p._wall_tree() != null
 	await frames(20)
-	clung = clung and p._wall_tree() != null and p.velocity.y >= -t.wall_slide_speed - 0.1
+	clung = clung and p._wall_tree() != null and p.velocity.y >= -t.wall_slide_speed - t.wall_slide_ramp * 0.55
 	p.ai_move = Vector2(1, 0.4) # the stick only roughly toward the other tree
 	p.ai_jump = true
 	await frames(2)
@@ -3491,6 +3492,409 @@ func _mountain_tests() -> void:
 			break
 	p.ai_move = Vector2.ZERO
 	check("falling into a mountain gap puts you back at its station", p.global_position.distance_to(m["mountain_gaps"]) < 1.5, "at %s" % p.global_position)
+
+## A thin pole standing on at (a tree trunk or lash post).
+func _pole(at: Vector3, h: float, group: String, r := 0.45) -> StaticBody3D:
+	var b := StaticBody3D.new()
+	var c := CollisionShape3D.new()
+	var cs := CylinderShape3D.new()
+	cs.radius = r
+	cs.height = h
+	c.shape = cs
+	b.add_child(c)
+	var mi := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = r
+	cm.bottom_radius = r
+	cm.height = h
+	mi.mesh = cm
+	b.add_child(mi)
+	b.add_to_group(group)
+	level.add_child(b)
+	b.global_position = at + Vector3.UP * h / 2.0
+	return b
+
+## Where p is on screen, as a share of the view (0..1 each way, y down).
+func _on_screen(rig: CameraRig, at: Vector3) -> Vector2:
+	if rig.cam.is_position_behind(at):
+		return Vector2(-1, -1)
+	var vp := rig.get_viewport().get_visible_rect().size
+	return rig.cam.unproject_position(at) / vp
+
+func _seen(rig: CameraRig, at: Vector3) -> bool:
+	var s := _on_screen(rig, at)
+	return s.x > 0.0 and s.x < 1.0 and s.y > 0.0 and s.y < 1.0
+
+func _clear_monsters() -> void:
+	for mon in get_nodes_in_group("monsters"):
+		mon.queue_free()
+	await frames(2)
+
+## The camera overhaul (jovi, 2026-10-04): composition guides, framing, walls and thin things, lens, angles,
+## springs, the aids (outline, shadow, arrows, reticle, first-person look); plus slower-gripping wall slides and
+## crumbling ledges.
+func _camera_tests() -> void:
+	var t: Tuning = level.t
+	var m: Dictionary = level.marks
+	var rig: CameraRig = get_nodes_in_group("camera_rig")[0]
+	var o := Vector3(900, 50, 0)
+	level.box(o, Vector3(80, 1, 80), Basis(), Color(0.5, 0.5, 0.5)) # a floating floor, top at y 50.5, edges at ±40
+	var stand := o + Vector3(0, 1.1, 0)
+	await _clear_monsters()
+
+	# C1. Lead room on the thirds: running right across the view, you sit left of middle and low
+	await _fresh_player(stand + Vector3(-20, 0, 20))
+	rig.yaw = 0.0
+	rig.snap()
+	p.ai_move = Vector2(1, 0)
+	for i in 100:
+		rig.idle = 0.0 # hands on the camera: no recentering
+		await physics_frame
+	var sp := _on_screen(rig, p.global_position)
+	p.ai_move = Vector2.ZERO
+	check("running right at %.0f m/s you sit at %.0f%% across and %.0f%% down: lead room on the left (toward the third), low on the lower third" % [_speed(), sp.x * 100.0, sp.y * 100.0],
+		sp.x > 0.22 and sp.x < 0.44 and sp.y > 0.53 and rig.mode == "run", "screen %s, mode %s" % [sp, rig.mode])
+
+	# C2. Recentering waits cam_recenter_delay after you last touched the camera, then eases in
+	await _fresh_player(stand + Vector3(-25, 0, 0))
+	rig.yaw = 0.0
+	rig.idle = 0.0
+	p.ai_move = Vector2(1, 0)
+	await frames(int(60 * (t.cam_recenter_delay - 0.2)))
+	var early := absf(angle_difference(0.0, rig.yaw))
+	await frames(240)
+	var late := absf(angle_difference(-PI / 2.0, rig.yaw))
+	p.ai_move = Vector2.ZERO
+	check("hands off the camera, it waits %.1f s before swinging behind you (turned %.0f° by then), then does (%.0f° off after 4 s more)" % [t.cam_recenter_delay, rad_to_deg(early), rad_to_deg(late)],
+		early < deg_to_rad(3.0) and late < deg_to_rad(25.0), "early %.1f°, late %.1f°" % [rad_to_deg(early), rad_to_deg(late)])
+
+	# C3. Thin things (a tree between you and the camera) don't push it in: they fade and you show as an outline.
+	# A wall does push it in, and once it's gone the camera eases back out.
+	await _fresh_player(stand)
+	rig.yaw = 0.0
+	rig.idle = 0.0
+	await frames(90)
+	var free_len := rig.arm.spring_length
+	var trunk := _pole(o + Vector3(0, 0.5, 3), 8.0, "trees")
+	var faded := false
+	var ghost := false
+	for i in 60:
+		rig.idle = 0.0
+		await physics_frame
+		faded = faded or rig.faded.has(trunk)
+		ghost = ghost or rig._ghost.visible
+	var tree_len := rig.arm.spring_length
+	trunk.queue_free()
+	var wall: StaticBody3D = level.box(o + Vector3(0, 3, 3.5), Vector3(8, 6, 0.5), Basis(), Color(0.4, 0.4, 0.4))
+	await frames(20)
+	var wall_len := rig.arm.spring_length
+	wall.queue_free()
+	await frames(2)
+	var one := rig.arm.spring_length
+	await frames(150)
+	var back := rig.arm.spring_length
+	check("a tree between you and the camera leaves it at %.1f of %.1f m (faded %s, outline %s); a wall pulls it in to %.1f m, and it eases back out (%.1f m a frame later, %.1f m after 2.5 s)" % [tree_len, free_len, faded, ghost, wall_len, one, back],
+		tree_len > free_len * 0.9 and faded and ghost and wall_len < 3.4 and one < wall_len + (free_len - wall_len) * 0.3 and back > free_len * 0.9,
+		"free %.1f tree %.1f wall %.1f one %.1f back %.1f" % [free_len, tree_len, wall_len, one, back])
+
+	# C4. Hard landings dip the camera; small hops don't
+	await _fresh_player(stand + Vector3(0, 20, 0))
+	var dip := 0.0
+	for i in 150:
+		await physics_frame
+		dip = minf(dip, rig._dip)
+	var settled := rig._dip
+	await _fresh_player(stand)
+	p.ai_jump = true
+	await frames(3)
+	p.ai_jump = false
+	var small_dip := 0.0
+	for i in 60:
+		await physics_frame
+		small_dip = minf(small_dip, rig._dip)
+	check("a 20 m drop dips the camera %.2f m on landing and it springs back (%.2f); a hop dips it %.2f m" % [-dip, settled, -small_dip],
+		dip < -0.15 and absf(settled) < 0.03 and small_dip > -0.02, "dip %.2f settled %.2f hop %.2f" % [dip, settled, small_dip])
+
+	# C5. A big hit kicks the camera along the blow, and it springs back
+	Hitfx.punch(self, Vector3.RIGHT, 2.0)
+	var kick := 0.0
+	for i in 12:
+		await physics_frame
+		kick = maxf(kick, rig._punch.x)
+	await frames(50)
+	check("a big hit kicks the camera %.2f m along the blow and it settles (%.3f m left)" % [kick, rig._punch.length()], kick > 0.1 and rig._punch.length() < 0.03, "kick %.2f" % kick)
+
+	# C6. Lock-on with height: a target on a perch tilts the view up, one below tilts it down; both stay in frame
+	# and the edges soften
+	level.box(o + Vector3(0, 2.5, -10), Vector3(3, 4, 3), Basis(), Color(0.4, 0.4, 0.4)) # a 4 m perch
+	await _fresh_player(stand + Vector3(0, 0, -1))
+	var perched := await _dummy(o + Vector3(0, 5.2, -10))
+	p.ai_target = true
+	for i in 90:
+		await physics_frame
+	var up_tilt := rig.tilt
+	var both := _seen(rig, p.global_position) and _seen(rig, perched.global_position)
+	var soft := rig.overlay.soft
+	var locked := rig.mode
+	p.ai_target = false
+	perched.queue_free()
+	await frames(2)
+	await _fresh_player(o + Vector3(0, 5.2, -10)) # on the perch, the target below
+	p.facing = Vector3.BACK
+	var below := await _dummy(o + Vector3(0, 1.1, -2))
+	p.ai_target = true
+	for i in 90:
+		await physics_frame
+	var down_tilt := rig.tilt
+	var both2 := _seen(rig, p.global_position) and _seen(rig, below.global_position)
+	p.ai_target = false
+	below.queue_free()
+	await frames(30)
+	check("locked on, a target 4 m up tilts the view %.2f, one 4 m down %.2f; both stay in frame (%s, %s) and the edges soften (%.1f)" % [up_tilt, down_tilt, both, both2, soft],
+		locked == "lock" and up_tilt > 0.12 and down_tilt < -0.08 and both and both2 and soft > 0.0 and rig.overlay.soft == 0.0,
+		"mode %s tilt %.2f/%.2f seen %s/%s soft %.2f" % [locked, up_tilt, down_tilt, both, both2, soft])
+
+	# C7. A pack: the camera frames you and every monster near you
+	await _fresh_player(stand + Vector3(15, 0, 15))
+	rig.yaw = 0.0
+	await frames(60)
+	var alone := rig.want_len
+	var pk: Array[Monster] = []
+	for d in [Vector3(-7, 0, -6), Vector3(7, 0, -6), Vector3(0, 0, -11)]:
+		pk.append(await _dummy(p.global_position + d))
+	for i in 90:
+		await physics_frame
+	var all_seen := true
+	for mon in pk:
+		all_seen = all_seen and _seen(rig, mon.global_position)
+	check("a pack of 3: the camera pulls out from %.1f to %.1f m and frames them all (%s)" % [alone, rig.want_len, all_seen],
+		rig.mode == "pack" and rig.pack == 3 and rig.want_len > alone * 1.2 and all_seen, "mode %s pack %d" % [rig.mode, rig.pack])
+	await _clear_monsters()
+
+	# C8. A powerful foe (a brute): low angle looking up and a long lens; a blob doesn't do it
+	await _fresh_player(stand + Vector3(-15, 0, -15))
+	await _dummy(p.global_position + Vector3(0, 0, -8), "blob")
+	await frames(60)
+	var blob_tilt := rig.tilt
+	var blob_fov := rig.cam.fov
+	await _clear_monsters()
+	await _dummy(p.global_position + Vector3(0, 0, -8), "brute")
+	await frames(90)
+	check("near a brute the camera drops low (tilt %.2f, a blob %.2f) and the lens narrows to %.0f° (a blob %.0f°)" % [rig.tilt, blob_tilt, rig.cam.fov, blob_fov],
+		rig.powerful != null and rig.tilt > blob_tilt + t.cam_low_angle * 0.6 and rig.cam.fov < blob_fov - t.cam_long_lens * 0.6,
+		"tilt %.2f fov %.1f" % [rig.tilt, rig.cam.fov])
+	await _clear_monsters()
+
+	# C9. Small: a high angle looking down on you
+	await _fresh_player(stand)
+	p.set_small(true, true)
+	await frames(60)
+	var small_tilt := rig.tilt
+	p.set_small(false, true)
+	await frames(30)
+	check("small, the camera looks down on you (tilt %.2f)" % small_tilt, small_tilt < -t.cam_high_angle * 0.6, "tilt %.2f" % small_tilt)
+
+	# C10. Climbing the vines tilts the view up
+	await _fresh_player(m["mountain_vine_foot"])
+	p.ai_move = Vector2(0, 1)
+	var climb_tilt := 0.0
+	var climb_mode := ""
+	for i in 90:
+		await physics_frame
+		if p.climbing != null:
+			climb_tilt = rig.tilt
+			climb_mode = rig.mode
+	p.ai_move = Vector2.ZERO
+	check("climbing vines, the view tilts up %.2f" % climb_tilt, climb_mode == "climb" and climb_tilt > t.cam_climb_tilt * 0.6, "mode %s tilt %.2f" % [climb_mode, climb_tilt])
+
+	# C11. Frame within a frame: in the chimney the camera waits outside its mouth looking up through it
+	await _fresh_player(m["mountain_slot"])
+	await frames(120)
+	check("in the mountain's chimney the camera frames you through its mouth (camera z %.1f, the mouth at -293)" % rig.cam.global_position.z,
+		rig.mode == "frame" and rig.cam.global_position.z < -293.5 and absf(angle_difference(rig.yaw, PI)) < 0.35,
+		"mode %s cam %s yaw %.2f" % [rig.mode, rig.cam.global_position, rig.yaw])
+
+	# C12. Openness: tight in the Cellar, wide on an open floor
+	await _fresh_player(m["cellar_candy"])
+	await frames(120)
+	var tight := rig.open
+	var tight_len := rig.want_len
+	await _fresh_player(stand)
+	await frames(120)
+	check("the camera sits closer in the Cellar (open %.2f, %.1f m) than out in the open (%.2f, %.1f m)" % [tight, tight_len, rig.open, rig.want_len],
+		tight < rig.open - 0.25 and tight_len < rig.want_len * 0.85, "")
+
+	# C13. Dolly zoom at a cliff edge: the view widens while the camera closes in
+	var mid_fov := rig.cam.fov
+	var mid_len := rig.want_len
+	await _fresh_player(stand + Vector3(0, 0, -39))
+	p.facing = Vector3.FORWARD
+	await frames(90)
+	check("at a sheer edge the dolly zoom widens the view %.0f° -> %.0f° while the camera closes in %.1f -> %.1f m" % [mid_fov, rig.cam.fov, mid_len, rig.want_len],
+		rig.cam.fov > mid_fov + t.cam_dolly * 0.7 and rig.want_len < mid_len * 0.85, "dolly %.2f" % rig.dolly)
+
+	# C14. ...and off a big launch. Every camera move eases: no frame jumps the lens more than 2.5° or the angle 0.08
+	await _fresh_player(stand)
+	await frames(60)
+	p.launch(Vector3(0, 28, 0))
+	var peak := 0.0
+	var jump_fov := 0.0
+	var jump_rot := 0.0
+	var pf := rig.cam.fov
+	var pr := rig.rotation.x
+	for i in 90:
+		await physics_frame
+		peak = maxf(peak, rig.dolly)
+		jump_fov = maxf(jump_fov, absf(rig.cam.fov - pf))
+		jump_rot = maxf(jump_rot, absf(rig.rotation.x - pr))
+		pf = rig.cam.fov
+		pr = rig.rotation.x
+	await frames(120)
+	check("a big launch pulses the dolly zoom (%.2f) and every move eases (largest frame step %.2f°, %.3f rad)" % [peak, jump_fov, jump_rot],
+		peak > 0.5 and jump_fov < 2.5 and jump_rot < 0.08, "")
+
+	# C15. Blob shadow under you in the air, on the floor below
+	p.ai_jump = true
+	var shadow := false
+	var shadow_y := 0.0
+	for i in 30:
+		await physics_frame
+		if not p.is_on_floor() and rig._shadow.visible:
+			shadow = true
+			shadow_y = rig._shadow.global_position.y
+	p.ai_jump = false
+	await frames(60)
+	check("in the air a blob shadow sits on the floor below you (y %.2f, the floor 50.5) and it's gone once you land" % shadow_y,
+		shadow and absf(shadow_y - 50.5) < 0.1 and not rig._shadow.visible, "")
+
+	# C16. Banked ground rolls the camera a little
+	var bank: StaticBody3D = level.box(o + Vector3(20, 2, 20), Vector3(10, 1, 10), Basis(Vector3.BACK, deg_to_rad(18.0)), Color(0.45, 0.5, 0.45))
+	await _fresh_player(o + Vector3(20, 4.2, 20))
+	rig.yaw = 0.0
+	var roll := 0.0
+	for i in 40:
+		rig.idle = 0.0
+		await physics_frame
+		if p.is_on_floor():
+			roll = maxf(roll, absf(rig.roll))
+	bank.queue_free()
+	check("on ground banked 18° the camera rolls %.1f°" % rad_to_deg(roll), roll > deg_to_rad(2.0) and roll < deg_to_rad(10.0), "")
+
+	# C17. A light Dutch tilt when drunk; none sober on full hearts
+	await _fresh_player(stand)
+	await frames(60)
+	var sober := absf(rig.roll)
+	Coat.of(p).make_drunk(4.0)
+	var dutch := 0.0
+	for i in 120:
+		await physics_frame
+		dutch = maxf(dutch, absf(rig.roll))
+	Coat.of(p).drunk = 0.0
+	check("drunk, the view sways up to %.1f° (sober %.1f°)" % [rad_to_deg(dutch), rad_to_deg(sober)], dutch > t.cam_dutch * 0.4 and dutch < t.cam_dutch * 1.5 and sober < 0.005, "")
+
+	# C18. Off-screen arrows: a monster winding up behind the camera gets an arrow; one in view doesn't
+	await _fresh_player(stand)
+	rig.yaw = 0.0
+	await frames(30)
+	var behind := await _dummy(p.global_position + Vector3(0, 0, 14))
+	behind.state = "windup"
+	rig.overlay.update_arrows()
+	var n_behind := rig.overlay.arrows.size()
+	behind.global_position = p.global_position + Vector3(0, 0, -6)
+	behind.state = "windup"
+	await physics_frame
+	behind.state = "windup"
+	rig.overlay.update_arrows()
+	var n_front := rig.overlay.arrows.size()
+	await _clear_monsters()
+	check("a monster winding up behind the camera gets an edge arrow (%d); in view it doesn't (%d)" % [n_behind, n_front], n_behind == 1 and n_front == 0, "")
+
+	# C19. The reticle: not locked on, the lash goes where the camera points, not where you face
+	await _fresh_player(stand)
+	p.facing = Vector3.FORWARD # facing -z
+	var post := _pole(p.global_position + Vector3(9, -0.6, 0), 2.5, "lash_posts", 0.2)
+	rig.yaw = -PI / 2.0 # the camera looks +x
+	rig.aim_always = true
+	for i in 20:
+		rig.idle = 0.0
+		await physics_frame
+	var aimed := rig.aim_ok
+	p.inventory.add("lash")
+	p.use_lash()
+	var pulled := p.grapple_t > 0.0 and p.grapple_to.x > p.global_position.x + 5.0
+	rig.aim_always = false
+	for i in 40:
+		await physics_frame
+	post.queue_free()
+	check("facing away from a post with the camera on it, the reticle catches it (%s) and the lash pulls you there (%s)" % [aimed, pulled], aimed and pulled, "")
+
+	# C20. First-person look: the camera goes to your head, you stand still and face where you look
+	await _fresh_player(stand)
+	rig.look_held = true
+	await frames(40)
+	var head := rig.arm.spring_length
+	rig.yaw = -PI / 2.0
+	p.ai_move = Vector2(0, -1)
+	await frames(40)
+	var still := _speed()
+	var faces := p.facing.dot(Vector3.RIGHT)
+	var hidden := not p.visual.visible
+	p.ai_move = Vector2.ZERO
+	rig.look_held = false
+	await frames(60)
+	check("holding look, the camera sits in your head (%.2f m out), you stand still (%.1f m/s), face where you look (%.2f) and your body hides (%s); letting go eases back out (%.1f m)" % [head, still, faces, hidden, rig.arm.spring_length],
+		head < 0.3 and still < 0.5 and faces > 0.9 and hidden and rig.arm.spring_length > 2.0 and p.visual.visible, "")
+
+	# W1. Wall slides only slow you for a moment (jovi: walls slowed falls too much): 20 m down a wall
+	var tall: StaticBody3D = level.box(o + Vector3(-30, 25, -30), Vector3(6, 50, 1), Basis(), Color(0.4, 0.4, 0.45))
+	var slides := []
+	for kind in ["wall", "tree"]:
+		var post2: StaticBody3D = null
+		if kind == "tree":
+			tall.queue_free()
+			post2 = _pole(o + Vector3(-30, 0.5, -30), 50.0, "trees")
+		var top := o + Vector3(-30, 40, -28.5 if kind == "wall" else -29.0)
+		await _fresh_player(top)
+		p.global_position = top # (placing lets you fall a moment: start again from still)
+		p.velocity = Vector3.ZERO
+		p._slide_t = 0.0
+		p.ai_move = Vector2(0, -1)
+		var y_start := p.global_position.y
+		var tt := 0.0
+		var on := 0
+		var early_v := 0.0
+		while p.global_position.y > y_start - 20.0 and tt < 6.0:
+			await physics_frame
+			tt += 1.0 / 60.0
+			if p.is_on_wall():
+				on += 1
+			if tt < 0.35:
+				early_v = minf(early_v, p.velocity.y)
+		p.ai_move = Vector2.ZERO
+		slides.append([tt, on, early_v])
+		if post2 != null:
+			post2.queue_free()
+	var free_t := sqrt(2.0 * 20.0 / t.gravity)
+	check("sliding 20 m down a wall takes %.1f s and a tree %.1f s (free fall %.1f s; it used to be %.0f s), still gripping at first (%.1f, %.1f m/s)" % [slides[0][0], slides[1][0], free_t, 20.0 / t.wall_slide_speed, slides[0][2], slides[1][2]],
+		slides[0][0] < 2.3 and slides[1][0] < 2.3 and slides[0][1] > 40 and slides[1][1] > 40 and slides[0][2] > -8.0 and slides[1][2] > -8.0, "%s" % [slides])
+
+	# K1. Crumbling ledges: one gives way crumble_delay after you step on it, and comes back after crumble_regrow
+	var ck: Vector3 = m["mountain_crumble"]
+	await _fresh_player(ck)
+	await frames(int(60 * t.crumble_delay * 0.6))
+	var held := p.is_on_floor() and p.global_position.y > ck.y - 0.3
+	await frames(int(60 * (t.crumble_delay * 0.4 + 0.8)))
+	var dropped := p.global_position.y < ck.y - 2.0
+	var any_fallen := false
+	for c in get_nodes_in_group("crumble"):
+		any_fallen = any_fallen or c.state == "fallen"
+	await _fresh_player(m["mountain_gaps"])
+	await frames(int(60 * (t.crumble_regrow + 0.5)))
+	var back_all := true
+	for c in get_nodes_in_group("crumble"):
+		back_all = back_all and c.state == "solid"
+	check("a crumbling ledge holds you %.1f s, gives way at %.1f s and comes back %.0f s later" % [t.crumble_delay * 0.6, t.crumble_delay, t.crumble_regrow],
+		held and dropped and any_fallen and back_all, "held %s dropped %s fallen %s back %s" % [held, dropped, any_fallen, back_all])
 
 ## Skiing (jovi, 2026-10-04): the shield surf with carving, tuck, brake, pop, spins, landings, trees,
 ## ice, duck bars, rails, cliffs, pads, snow bridges, wind, the lash post, and the camera at speed.
@@ -5274,3 +5678,5 @@ func _spider_lash_tests(arena: Vector3) -> void:
 			mon.queue_free()
 	pen.queue_free()
 	await _fresh_player(arena)
+
+

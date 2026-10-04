@@ -25,6 +25,10 @@ extends CharacterBody3D
 
 var t: Tuning
 var cam_basis := Basis() ## yaw-only camera basis; stick input is read relative to it
+var looking := false ## first-person look (held; CameraRig sets it): you stand still and look round
+var look_dir := Vector3.ZERO ## where you're looking in first person (you face it)
+var cam_aim := Vector3.ZERO ## the point under the camera's reticle (CameraRig sets it; ZERO in tests or with nothing to aim at)
+var launch_t := 99.0 ## seconds since a launcher threw you
 var spawn := Vector3.ZERO
 
 # Scripted input for headless tests: when ai is true, ai_move is a world-space XZ direction.
@@ -43,6 +47,7 @@ var _ai_jump_prev := false
 var coyote := 0.0
 var _wall_n := Vector3.ZERO ## the last wall you were on, for a late wall jump (wall_coyote)
 var _wall_t := 0.0
+var _slide_t := 0.0 ## seconds sliding down walls since you last stood or kicked off (the slide speeds up)
 var buffer := 0.0
 var jumping := false
 var target: Node3D = null
@@ -290,6 +295,7 @@ func launch(v: Vector3) -> void:
 	jump_chain = 0
 	roll_t = 0.0
 	air_lock = 0.15
+	launch_t = 0.0
 	global_position += Vector3.UP * 0.1
 
 ## Candle hat: wearing it lit makes you a light source (and fire). Returns the new state.
@@ -405,6 +411,7 @@ func teleport(pos: Vector3) -> void:
 	up_direction = Vector3.UP
 	_vault_to = Vector3.ZERO
 	_wall_t = 0.0 # no wall jump off a wall you left behind
+	_slide_t = 0.0
 	platform_on_leave = CharacterBody3D.PLATFORM_ON_LEAVE_DO_NOTHING
 	_teleported = 2
 
@@ -505,6 +512,8 @@ func use_lash() -> void:
 	var dir := _flat_facing()
 	if target != null and is_instance_valid(target):
 		dir = (target.global_position - from).normalized()
+	elif cam_aim != Vector3.ZERO and not surfing and cam_aim.distance_to(from) > 1.0:
+		dir = (cam_aim - from).normalized() # not locked on: the lash goes where the camera's reticle points
 	elif surfing and is_on_floor():
 		var post := _ski_post_ahead()
 		if post != null:
@@ -678,6 +687,7 @@ func hurt(amount: int, from: Vector3, by: Node = null, heavy := false) -> void:
 	var away := global_position - from
 	away.y = 0
 	away = away.normalized() if away.length() > 0.01 else -facing
+	Hitfx.punch(get_tree(), away, float(amount))
 	up_direction = Vector3.UP
 	velocity = away * 8.0 + Vector3.UP * 6.0
 	global_position += Vector3.UP * 0.05
@@ -795,6 +805,15 @@ func _physics_process(dt: float) -> void:
 				item_pressed = i
 		if Input.is_action_just_pressed("respawn"):
 			respawn()
+	if looking:
+		# first-person look: you stand still; only the items work (aimed where you look)
+		jump_pressed = false
+		jump_held = false
+		attack_pressed = false
+		attack_held = false
+		guard_held = false
+		target_held = false
+	launch_t += dt
 	_flick_t -= dt
 	_flick.visible = _flick_t > 0.0
 	_drop_unslotted()
@@ -869,7 +888,7 @@ func _physics_process(dt: float) -> void:
 	if strafing and not had_strafe:
 		lock_dir = _flat_facing()
 
-	var wish := _wish() if pilot == null and guard_break_t <= 0.0 else Vector3.ZERO
+	var wish := _wish() if pilot == null and guard_break_t <= 0.0 and not looking else Vector3.ZERO
 	wish = Liquids.player_wish(self, wish, dt) # wine sways it
 	last_wish = wish
 	if candle_lit:
@@ -985,7 +1004,7 @@ func _physics_process(dt: float) -> void:
 	if global_position.y < -30.0:
 		respawn()
 	_update_visual(dt)
-	visual.visible = invuln <= 0.0 or fmod(invuln, 0.15) < 0.09
+	visual.visible = not looking and (invuln <= 0.0 or fmod(invuln, 0.15) < 0.09)
 
 ## Holding target, a quick tap of the stick (out of neutral and back within dodge_tap_time) dodges that way.
 ## Holding the stick longer just strafes or circles.
@@ -1007,6 +1026,7 @@ func _read_tap(dt: float, wish: Vector3) -> void:
 func _ground_step(dt: float, wish: Vector3) -> void:
 	coyote = t.coyote_time
 	_wall_t = 0.0
+	_slide_t = 0.0
 	if _vault_hold > 0.0:
 		# still holding the stick the way you climbed: stay on top until you let go or steer another way
 		_vault_hold -= dt
@@ -1081,12 +1101,12 @@ func _air_step(dt: float, wish: Vector3, jump_held: bool) -> void:
 	if wall and velocity.y < 0.0 and wish.dot(-wn) > 0.3 and carrying == null and held_seed == null and _grab_ledge(wn):
 		return
 	var tree := _wall_tree() if wall else null
+	var sliding := false
 	if tree != null and wall_lock <= 0.0:
 		# a tree: you cling to it whichever way the stick points, so you can bounce from tree to tree
 		velocity.x = -wn.x * 1.0
 		velocity.z = -wn.z * 1.0
-		if velocity.y < -t.wall_slide_speed:
-			velocity.y = -t.wall_slide_speed
+		sliding = true
 	_wall_t -= dt
 	if wall:
 		_wall_n = wn
@@ -1097,8 +1117,15 @@ func _air_step(dt: float, wish: Vector3, jump_held: bool) -> void:
 		_ground_jump(Vector3.UP)
 	elif buffer > 0.0 and _wall_t > 0.0:
 		_wall_jump(_wall_n, wish) # just left the wall: still counts
-	elif wall and velocity.y < -t.wall_slide_speed and wish.dot(-wn) > 0.3:
-		velocity.y = -t.wall_slide_speed
+	elif wall and wish.dot(-wn) > 0.3:
+		sliding = true
+	if sliding:
+		# a wall slide only slows you for a moment (jovi, 2026-10-04: walls slowed falls too much): the longer you
+		# slide the faster you go, and a fast fall into a wall is only braked, not stopped
+		_slide_t += dt
+		var cap := t.wall_slide_speed + t.wall_slide_ramp * _slide_t
+		if velocity.y < -cap:
+			velocity.y = move_toward(velocity.y, -cap, t.wall_slide_brake * dt)
 	if jumping and not jump_held and velocity.y > t.jump_cut:
 		velocity.y = t.jump_cut
 	if velocity.y <= 0.0:
@@ -1145,6 +1172,7 @@ func _wall_jump(wn: Vector3, wish := Vector3.ZERO) -> void:
 	velocity = h + Vector3.UP * t.wall_jump_up
 	facing = h.normalized()
 	_wall_t = 0.0
+	_slide_t = 0.0
 	jumping = false # a wall kick is always full height: the jump cut is for ground jumps
 	buffer = 0.0
 	wall_lock = 0.18
@@ -1283,6 +1311,8 @@ func _update_visual(dt: float) -> void:
 		f = roll_dir
 	elif wall_lock > 0.0:
 		f = facing
+	elif looking and look_dir != Vector3.ZERO:
+		f = look_dir
 	else:
 		f = velocity
 	f = f - up * f.dot(up)
@@ -1510,7 +1540,7 @@ func _vault_step() -> bool:
 func _grab_ledge(wn: Vector3) -> bool:
 	var space := get_world_3d().direct_space_state
 	var over := global_position - wn * (radius() + 0.35)
-	var q := PhysicsRayQueryParameters3D.create(over + Vector3.UP * t.ledge_reach, over + Vector3.UP * 0.1, 1 | 1 << 4, [get_rid()]) # walls and seed cubes
+	var q := PhysicsRayQueryParameters3D.create(over + Vector3.UP * t.ledge_reach, over + Vector3.DOWN * radius() * 0.8, 1 | 1 << 4, [get_rid()]) # walls and seed cubes
 	var hit := space.intersect_ray(q)
 	if hit.is_empty() or (hit["normal"] as Vector3).y < 0.7 or hit["collider"] is IronCube:
 		return false # iron is too smooth to grip: its 4.5 m still needs a triple jump
@@ -1519,6 +1549,11 @@ func _grab_ledge(wn: Vector3) -> bool:
 	var room := PhysicsRayQueryParameters3D.create(top + Vector3.UP * 0.1, top + Vector3.UP * 1.1, 1, [get_rid()])
 	if not space.intersect_ray(room).is_empty():
 		return false
+	if top.y < global_position.y + 0.1:
+		# the ledge's top is level with you or just below (you clipped its corner): step up onto it, don't hang
+		global_position.y = top.y + radius() + 0.05
+		velocity.y = 0.0
+		return true
 	hang = top
 	hang_n = wn
 	velocity = Vector3.ZERO

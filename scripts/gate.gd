@@ -36,6 +36,10 @@ func _ready() -> void:
 	var s := BoxShape3D.new()
 	s.size = size
 	_shape.shape = s
+	# its doorway frames you as you pass through (CameraRig: frame within a frame)
+	var thin := Vector3.RIGHT if size.x < size.z else Vector3.BACK
+	var wide := maxf(size.x, size.z)
+	CamFrame.make(self, Vector3.ZERO, Vector2(wide, size.y), thin, true, 6.0) # (made before the gate is placed: it rides along)
 
 func open() -> void:
 	if opened:

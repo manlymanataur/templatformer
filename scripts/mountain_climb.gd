@@ -9,7 +9,8 @@ extends Node3D
 ##            holding the stick toward it
 ##   chimney  a 6 m wide slot up a 10 m cliff: wall-jump side to side
 ##   vines    an 8 m vine face: climb it
-##   gaps     east along a 20 m runway: a 10 m gap, a 12.5 m platform, then an 8 m gap
+##   gaps     east along a 20 m runway: a 10 m gap, a 12.5 m crumbling platform (it gives way behind you), then
+##            an 8 m gap
 ##   launch   a launch pad up 12 m onto the next shelf
 ##   rail     shield up, a boost pad sends you up an 11 m uphill rail (only the shield surf grinds, and slow
 ##            too much on it and you slide back down)
@@ -102,6 +103,7 @@ func _build() -> void:
 	rect(-197, -190, -293, -279, 100, 134)
 	rect(-203, -197, -287, -279, 100, 134)
 	m["mountain_slot"] = Vector3(X, 124.8, -290)
+	CamFrame.make(lv, Vector3(X, 129, -293), Vector2(6, 10), Vector3.FORWARD, false, 7.0) # the camera looks up the slot through its mouth
 	m["mountain_cliff3"] = 134.0
 
 	# vines: an 8 m vine face
@@ -112,8 +114,11 @@ func _build() -> void:
 	m["mountain_cliff4"] = 142.0
 
 	# gaps: east along the 20 m shelf, a 10 m gap, an 8 m platform, an 8 m gap
-	station("gaps", Vector3(-208, 142.8, -272), "Run east: a 10 m gap, then 8 m.")
-	rect(-180, -167.5, -279, -265, 136, 142, LEDGE)
+	station("gaps", Vector3(-208, 142.8, -272), "Run east: a 10 m gap, then 8 m.\nThe middle platform crumbles: keep moving.")
+	for i in 5: # crumbling ledges (jovi, 2026-10-04): each gives way crumble_delay after you step on it
+		var x0 := -180.0 + i * 2.5
+		CrumbleLedge.make(lv, Vector3(x0 + 1.25, 141.25, -272), Vector3(2.5, 1.5, 14), lv.t)
+	m["mountain_crumble"] = Vector3(-173.75, 142.8, -272)
 	rect(-159.5, -144, -279, -265, 136, 142, LEDGE)
 	m["mountain_gap1"] = Vector2(-190, -180) # x from, x to
 	m["mountain_gap2"] = Vector2(-167.5, -159.5)

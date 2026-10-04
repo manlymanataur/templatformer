@@ -8,6 +8,7 @@ const KEYS := {
 	"cam_left": [KEY_J], "cam_right": [KEY_L], "cam_up": [KEY_I], "cam_down": [KEY_K],
 	"respawn": [KEY_R], "attack": [KEY_F], "context": [KEY_E], "guard": [KEY_C],
 	"item_1": [KEY_1], "item_2": [KEY_2], "item_3": [KEY_3], "inventory": [KEY_ENTER],
+	"look": [KEY_Q], # hold: first-person look (like Ocarina's C-up)
 }
 const PAD_AXES := {
 	"move_left": [JOY_AXIS_LEFT_X, -1.0], "move_right": [JOY_AXIS_LEFT_X, 1.0],
@@ -17,7 +18,8 @@ const PAD_AXES := {
 	"target": [JOY_AXIS_TRIGGER_LEFT, 1.0], "guard": [JOY_AXIS_TRIGGER_RIGHT, 1.0],
 }
 const PAD_BUTTONS := {"jump": JOY_BUTTON_A, "respawn": JOY_BUTTON_BACK, "attack": JOY_BUTTON_X, "context": JOY_BUTTON_B,
-	"item_1": JOY_BUTTON_Y, "item_2": JOY_BUTTON_LEFT_SHOULDER, "item_3": JOY_BUTTON_RIGHT_SHOULDER, "inventory": JOY_BUTTON_START}
+	"item_1": JOY_BUTTON_Y, "item_2": JOY_BUTTON_LEFT_SHOULDER, "item_3": JOY_BUTTON_RIGHT_SHOULDER, "inventory": JOY_BUTTON_START,
+	"look": JOY_BUTTON_DPAD_UP}
 
 func _ready() -> void:
 	for action in KEYS:
