@@ -3988,10 +3988,15 @@ func _menu_tests() -> void:
 	var cs := menu.challenges()
 	menu.open(false)
 	menu.page = 2 # (it reopens on the screen you left it on, as in Ocarina)
+	var was := []
+	for c in cs:
+		was.append(c.cleared)
+		c.cleared = false # (the challenge tests cleared them)
 	var before := menu.caption()
 	cs[0].cleared = true
 	var after := menu.caption()
-	cs[0].cleared = false
+	for i in cs.size():
+		cs[i].cleared = was[i]
 	menu.close()
 	check("Quest Status counts challenge stars: \"%s\", then \"%s\"" % [before, after], cs.size() == 3 and before.contains("0 / 3") and after.contains("1 / 3"), "")
 
