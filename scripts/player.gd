@@ -629,6 +629,53 @@ func context() -> void:
 	elif spider != null and is_instance_valid(spider) and spider.global_position.distance_to(global_position) < radius() + Spider.RADIUS + 0.8:
 		stow_spider()
 
+## What the context button (the A button on the HUD) would do right now: "" when nothing.
+func context_label() -> String:
+	var moving := _wish().length() > 0.2 or flat_speed() > 2.0
+	if pilot != null:
+		return "Spider"
+	if held_seed != null:
+		return "Drop" if climbing != null else ("Throw" if moving else "Put down")
+	if held_pot != null:
+		return "Throw" if moving or held_pot.liquid != "" else "Put down"
+	if carrying != null:
+		return "Throw" if moving else "Put down"
+	for n in get_tree().get_nodes_in_group("seeds"):
+		var sd := n as Seed
+		if (sd.loose() or sd.planted) and _next_to_cube(sd.global_position - global_position):
+			return "Uproot" if sd.planted else "Lift"
+	if not small:
+		for n in get_tree().get_nodes_in_group("pots"):
+			var pt := n as Pot
+			var d := pt.global_position - global_position
+			if pt.holder == null and not pt.flying and absf(d.y) < 1.2 and Vector2(d.x, d.z).length() < radius() + Pot.R + 0.9:
+				return "Lift"
+	for n in get_tree().get_nodes_in_group("bomb_flowers"):
+		var fl := n as BombFlower
+		if fl.ripe() and fl.global_position.distance_to(global_position) < radius() + 1.3:
+			return "Pull"
+	if spider != null and is_instance_valid(spider) and spider.global_position.distance_to(global_position) < radius() + Spider.RADIUS + 0.8:
+		return "Stow"
+	return ""
+
+## What the attack button (the B button on the HUD) does right now: "" when nothing.
+func attack_label() -> String:
+	if pilot != null:
+		return "Bite"
+	if carrying != null:
+		return "Throw"
+	if held_seed != null or held_pot != null:
+		return ""
+	if not is_on_floor() and not target_held and _can_pound():
+		return "Pound"
+	if not inventory.has("poleaxe"):
+		return ""
+	if guarding():
+		return "Bash"
+	if not is_on_floor():
+		return "Home" if target_held else "Attack"
+	return "Attack"
+
 ## Context button next to a pot picks it up (not when you're small: it's too heavy).
 func _grab_pot() -> bool:
 	if small:

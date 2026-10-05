@@ -353,6 +353,7 @@ func _combat_tests() -> void:
 	await _ski_feedback_tests()
 	await _mountain_tests()
 	await _camera_tests()
+	await _menu_tests()
 	await _works_tests(arena)
 	await _powers_tests()
 	await _cellar_tests()
@@ -3895,6 +3896,125 @@ func _camera_tests() -> void:
 		back_all = back_all and c.state == "solid"
 	check("a crumbling ledge holds you %.1f s, gives way at %.1f s and comes back %.0f s later" % [t.crumble_delay * 0.6, t.crumble_delay, t.crumble_regrow],
 		held and dropped and any_fallen and back_all, "held %s dropped %s fallen %s back %s" % [held, dropped, any_fallen, back_all])
+
+## Ocarina of Time's HUD and pause menu (jovi, 2026-10-05).
+func _menu_tests() -> void:
+	var m: Dictionary = level.marks
+	var hud = null
+	for c in level.get_children():
+		if "menu" in c and c.get("menu") is PauseMenu:
+			hud = c
+	var menu: PauseMenu = hud.menu
+
+	# U1. The A and B buttons say what the context and attack buttons would do right now
+	await _fresh_player(Vector3(90, 0.6, -80))
+	var idle_a := p.context_label()
+	var fl := BombFlower.make(level, p.global_position + Vector3(1.2, -p.radius(), 0), level.t)
+	await physics_frame
+	var near_a := p.context_label()
+	p.ai_context = true
+	await frames(3)
+	p.ai_move = Vector2(0, -1)
+	await frames(10)
+	var held_a := p.context_label()
+	var held_b := p.attack_label()
+	p.ai_move = Vector2.ZERO
+	await frames(20)
+	var still_a := p.context_label()
+	p.ai_context = true
+	await frames(3)
+	fl.queue_free()
+	await frames(150) # let the bomb go off
+	await _fresh_player(Vector3(90, 0.6, -80))
+	var ground_b := p.attack_label()
+	p.inventory.add("poleaxe")
+	var axe_b := p.attack_label()
+	p.ai_jump = true
+	await frames(10)
+	var air_b := p.attack_label()
+	p.ai_jump = false
+	await frames(40)
+	check("A says \"%s\" by nothing, \"%s\" by a bomb flower, \"%s\" running with a bomb and \"%s\" standing; B says \"%s\" holding it, \"%s\" with no poleaxe, \"%s\" with it and \"%s\" in the air" % [idle_a, near_a, held_a, still_a, held_b, ground_b, axe_b, air_b],
+		idle_a == "" and near_a == "Pull" and held_a == "Throw" and still_a == "Put down" and held_b == "Throw" and ground_b == "" and axe_b == "Attack" and air_b == "Pound", "")
+
+	# U2. The pause menu: four screens on a turning box; Enter pauses, Enter again closes
+	menu.open()
+	var was_paused := paused
+	var names := []
+	for i in 4:
+		names.append(PauseMenu.PAGES[menu.page])
+		await process_frame # draw each screen once
+		await process_frame
+		menu.turn(1)
+	var back_round := menu.page == 0
+	menu.cursor = Vector2i(PauseMenu.ITEM_COLS - 1, 0)
+	menu.move(Vector2i(1, 0)) # off the item grid's right side
+	var edge_turn := menu.page == 1
+	menu.turn(-1)
+	menu.close()
+	check("the pause menu turns through %s and back round, running off a side turns it too, and it pauses the game (%s) until closed (%s)" % [names, was_paused, not paused],
+		names == ["Select Item", "Map", "Quest Status", "Equipment"] and back_round and edge_turn and was_paused and not paused, "")
+
+	# U3. Select Item: the C buttons take the item under the cursor
+	p.inventory.add("lash")
+	p.inventory.add("potion")
+	menu.open(false)
+	var items := PauseMenu.grid_items()
+	var k := items.find("lash")
+	menu.cursor = Vector2i(k % PauseMenu.ITEM_COLS, k / PauseMenu.ITEM_COLS)
+	var put := menu.assign(2)
+	var cap := menu.caption()
+	var unowned := items.find("swap")
+	menu.cursor = Vector2i(unowned % PauseMenu.ITEM_COLS, unowned / PauseMenu.ITEM_COLS)
+	var refused := not menu.assign(0)
+	var hidden := menu.caption() == "???"
+	menu.close()
+	check("on Select Item, C3 takes the lash (\"%s\"); an item you haven't found shows ??? and can't be set" % cap,
+		put and p.inventory.slots[2] == "lash" and refused and hidden, "slots %s" % [p.inventory.slots])
+
+	# U4. Map: the area you're in is lit and named
+	await _fresh_player(m["combat_hill_foot"])
+	menu.open(false)
+	menu.page = 1
+	var zone := PauseMenu.zone_of(p.global_position)
+	menu.cursor = Vector2i(0, PauseMenu.ZONES.keys().find(zone))
+	var here := menu.caption()
+	var ski := PauseMenu.zone_of(m["mountain_base"])
+	menu.close()
+	check("the map knows you're in the %s (\"%s\"), and the mountain base is the %s" % [zone, here, ski],
+		zone == "Combat yard" and here.contains("you are here") and ski == "Mountain climb", "")
+
+	# U5. Quest Status: challenge stars count the cleared challenge rooms
+	var cs := menu.challenges()
+	menu.open(false)
+	menu.page = 2 # (it reopens on the screen you left it on, as in Ocarina)
+	var was := []
+	for c in cs:
+		was.append(c.cleared)
+		c.cleared = false # (the challenge tests cleared them)
+	var before := menu.caption()
+	cs[0].cleared = true
+	var after := menu.caption()
+	for i in cs.size():
+		cs[i].cleared = was[i]
+	menu.close()
+	check("Quest Status counts challenge stars: \"%s\", then \"%s\"" % [before, after], cs.size() == 3 and before.contains("0 / 3") and after.contains("1 / 3"), "")
+
+	# U6. Equipment: the moves are ??? until you own the poleaxe; the ground pound needs nothing
+	p.inventory = Inventory.new()
+	menu.open(false)
+	menu.page = 3
+	menu.cursor = Vector2i(0, 1)
+	var locked := menu.caption()
+	var pk := PauseMenu.MOVES.size() - 1
+	menu.cursor = Vector2i(pk % 2, pk / 2 + 1)
+	var pound := menu.caption()
+	p.inventory.add("poleaxe")
+	menu.cursor = Vector2i(0, 1)
+	var thrust := menu.caption()
+	menu.close()
+	check("Equipment: without the poleaxe its moves read ??? (\"%s\"), the pound doesn't (\"%s\"); with it, \"%s\"" % [locked, pound, thrust],
+		locked == "???" and pound.begins_with("Ground pound") and thrust.begins_with("Thrust combo"), "")
 
 ## Skiing (jovi, 2026-10-04): the shield surf with carving, tuck, brake, pop, spins, landings, trees,
 ## ice, duck bars, rails, cliffs, pads, snow bridges, wind, the lash post, and the camera at speed.

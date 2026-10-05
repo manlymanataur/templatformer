@@ -14,6 +14,7 @@ const GOLD := Color(1.0, 0.8, 0.25)
 
 var lv: Node3D
 var room := "" ## name
+var title := "" ## what its door (and the pause menu's Quest Status) calls it
 var door_at := Vector3.ZERO
 var start := Vector3.ZERO
 var goal := Vector3.ZERO
@@ -31,6 +32,7 @@ static func build(level: Node3D) -> void:
 		var c := Challenge.new()
 		c.lv = level
 		c.room = names[i]
+		c.title = titles[i]
 		c.door_at = Vector3(8 + i * 5, 0, -62)
 		level.add_child(c)
 		c._door(titles[i])

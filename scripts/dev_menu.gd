@@ -196,7 +196,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if get_tree().paused:
-		return # the inventory screen is open
+		return # the pause menu is open
 	match k:
 		KEY_G:
 			_show_menu(true)
@@ -244,7 +244,7 @@ func _choose(i: int) -> void:
 		"Give every item":
 			for id in Inventory.ITEMS:
 				player.inventory.add(id, int(Inventory.ITEMS[id]["max"]))
-			say("Every item added. Enter opens the inventory to set quick slots.", 3.0)
+			say("Every item added. Enter opens the pause menu to set the C buttons.", 3.0)
 		"God mode":
 			player.god = not player.god
 		"Heal":

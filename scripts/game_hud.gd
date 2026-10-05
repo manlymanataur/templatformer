@@ -1,13 +1,13 @@
 extends CanvasLayer
-## Hearts (top left), the three quick slots (bottom right) and the pause-screen inventory (Enter).
-## In the inventory, Up/Down pick an item and 1, 2 or 3 put it on that quick slot.
+## Ocarina of Time's HUD and menus (jovi, 2026-10-05). Hearts top left. Top right, the button cluster: B (green,
+## the attack button: what it does now), A (blue, the context button: what it would do now, like Ocarina's
+## action icon) and the three yellow C buttons (the quick slots 1, 2 and 3, with their items). Enter / Start
+## opens the pause menu (PauseMenu): Select Item, Map, Quest Status and Equipment.
 
 var player: Player
 var hearts: Control
-var slot_panels: Array[Label] = []
-var pause_panel: PanelContainer
-var pause_list: Label
-var sel := 0
+var buttons: Buttons
+var menu: PauseMenu
 var tint: ColorRect ## blue wash while a perfect dodge slows the world
 
 class Hearts extends Control:
@@ -39,6 +39,56 @@ class Hearts extends Control:
 			pts.append(o + Vector2(16 + x, 15 + y) * 0.9)
 		draw_colored_polygon(pts, c)
 
+## The button cluster, top right: B, A and the three C buttons, as in Ocarina.
+class Buttons extends Control:
+	var player: Player
+	const B_COL := Color(0.2, 0.7, 0.3)
+	const A_COL := Color(0.25, 0.45, 0.95)
+	const C_COL := Color(1.0, 0.82, 0.15)
+	func _process(_dt: float) -> void:
+		queue_redraw()
+	## Where each button sits, from the cluster's top-right corner.
+	static func spot(which: String) -> Vector2:
+		match which:
+			"B":
+				return Vector2(-232, 44)
+			"A":
+				return Vector2(-176, 70)
+			"C1":
+				return Vector2(-112, 50)
+			"C2":
+				return Vector2(-72, 86)
+			"C3":
+				return Vector2(-32, 50)
+		return Vector2.ZERO
+	func _draw() -> void:
+		var f := get_theme_default_font()
+		var o := Vector2(size.x - 14, 12)
+		_button(f, o + spot("B"), 26.0, B_COL, player.attack_label(), "B")
+		_button(f, o + spot("A"), 30.0, A_COL, player.context_label(), "A")
+		for i in Inventory.SLOTS:
+			var at := o + spot("C%d" % (i + 1))
+			var id := player.inventory.slots[i]
+			draw_circle(at, 21.0, Color(0, 0, 0, 0.35))
+			draw_arc(at, 21.0, 0.0, TAU, 28, C_COL, 3.0)
+			if id != "":
+				var col: Color = Inventory.ITEMS[id]["color"]
+				if Inventory.ITEMS[id].get("toggle", false) and not player.item_active(id) and id != "magnet":
+					col = col.darkened(0.35)
+				draw_circle(at, 14.0, col)
+				if int(Inventory.ITEMS[id]["max"]) > 1:
+					draw_string(f, at + Vector2(-2, 20), str(player.inventory.count(id)), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+				if id == "magnet":
+					draw_string(f, at + Vector2(-5, 6), "+" if player.magnet_push else "−", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
+			draw_string(f, at + Vector2(-4, -24), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, C_COL)
+	func _button(f: Font, at: Vector2, r: float, c: Color, label: String, key: String) -> void:
+		draw_circle(at, r, Color(c, 0.85) if label != "" else Color(c.darkened(0.6), 0.5))
+		draw_arc(at, r, 0.0, TAU, 32, Color(1, 1, 1, 0.5), 2.0)
+		if label == "":
+			draw_string(f, at + Vector2(-5, 6), key, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1, 0.4))
+		else:
+			draw_string(f, at + Vector2(-r, 5), label, HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, 13, Color.WHITE)
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	tint = ColorRect.new()
@@ -50,93 +100,26 @@ func _ready() -> void:
 	hearts.player = player
 	hearts.position = Vector2(14, 12)
 	add_child(hearts)
-	var row := HBoxContainer.new()
-	row.anchor_left = 1.0
-	row.anchor_top = 1.0
-	row.anchor_right = 1.0
-	row.anchor_bottom = 1.0
-	row.offset_left = -330
-	row.offset_top = -86
-	row.offset_right = -14
-	row.offset_bottom = -14
-	row.add_theme_constant_override("separation", 8)
-	add_child(row)
-	for i in Inventory.SLOTS:
-		var p := PanelContainer.new()
-		p.custom_minimum_size = Vector2(100, 70)
-		var l := Label.new()
-		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD
-		p.add_child(l)
-		row.add_child(p)
-		slot_panels.append(l)
-	pause_panel = PanelContainer.new()
-	pause_panel.anchor_left = 0.5
-	pause_panel.anchor_top = 0.5
-	pause_panel.anchor_right = 0.5
-	pause_panel.anchor_bottom = 0.5
-	pause_panel.offset_left = -220
-	pause_panel.offset_top = -150
-	pause_panel.offset_right = 220
-	pause_panel.offset_bottom = 150
-	pause_list = Label.new()
-	pause_list.add_theme_font_size_override("font_size", 20)
-	pause_panel.add_child(pause_list)
-	pause_panel.visible = false
-	add_child(pause_panel)
-	player.inventory.changed.connect(_refresh)
-	_refresh()
-
-func _refresh() -> void:
-	var inv := player.inventory
-	for i in Inventory.SLOTS:
-		var id := inv.slots[i]
-		var text := "%d\n" % (i + 1)
-		if id == "magnet":
-			text += "Magnet " + ("+ push" if player.magnet_push else "− pull")
-		elif id != "" and Inventory.ITEMS[id].get("toggle", false):
-			text += Inventory.ITEMS[id]["name"] + (" (on)" if player.item_active(id) else "")
-		elif id != "":
-			text += "%s ×%d" % [Inventory.ITEMS[id]["name"], inv.count(id)]
-		else:
-			text += "—"
-		slot_panels[i].text = text
-	var items := inv.owned()
-	sel = clampi(sel, 0, maxi(items.size() - 1, 0))
-	var s := "INVENTORY\n\n"
-	if items.is_empty():
-		s += "Nothing yet. Find the poleaxe by the start.\n"
-	for k in items.size():
-		var id := items[k]
-		var tag := ""
-		if not Inventory.ITEMS[id]["slot"]:
-			tag = "  (equipped: F / X attack, C / RT guard)"
-		elif inv.slots.has(id):
-			tag = "  [slot %d]" % (inv.slots.find(id) + 1)
-		s += ("> " if k == sel else "   ") + "%s ×%d%s\n" % [Inventory.ITEMS[id]["name"], inv.count(id), tag]
-	s += "\nUp/Down pick · 1 2 3 assign · Enter close"
-	pause_list.text = s
+	buttons = Buttons.new()
+	buttons.player = player
+	buttons.set_anchors_preset(Control.PRESET_FULL_RECT)
+	buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(buttons)
+	var top := CanvasLayer.new() # over everything, the debug readout too
+	top.layer = 20
+	top.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(top)
+	menu = PauseMenu.new()
+	menu.player = player
+	top.add_child(menu)
 
 func _unhandled_input(e: InputEvent) -> void:
 	if e.is_action_pressed("inventory"):
-		pause_panel.visible = not pause_panel.visible
-		get_tree().paused = pause_panel.visible
-		_refresh()
+		if menu.is_open:
+			menu.close()
+		elif not get_tree().paused:
+			menu.open()
 		get_viewport().set_input_as_handled()
-		return
-	if not pause_panel.visible:
-		return
-	var items := player.inventory.owned()
-	if e.is_action_pressed("ui_up"):
-		sel = maxi(sel - 1, 0)
-	elif e.is_action_pressed("ui_down"):
-		sel = mini(sel + 1, maxi(items.size() - 1, 0))
-	else:
-		for i in Inventory.SLOTS:
-			if e.is_action_pressed("item_%d" % (i + 1)) and sel < items.size():
-				player.inventory.assign(i, items[sel])
-	_refresh()
 
 func _process(_dt: float) -> void:
 	tint.color.a = 0.18 if Hitfx.slow_left > 0.0 else 0.0
